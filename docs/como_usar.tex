@@ -1,0 +1,225 @@
+%TP genérico
+
+
+
+%Configuracion del documento
+
+%Tamaño de letra principal:
+
+\documentclass[12pt]{article}
+
+
+%Título y autor(es):
+
+\title{Red de Hopfield}
+\author{Sergio}
+
+
+%Tamaño de página y los márgenes:
+\usepackage[a4paper,headheight=16pt]{geometry}
+
+\textwidth      =  450pt     %Ancho del cuerpo
+\textheight     =  650pt     %Largo del cuerpo
+\topmargin      =  0pt       %Agrega espacio en el margen superior
+\oddsidemargin  =  0pt       %+ margen izquierdo en paginas impares
+\evensidemargin =  0pt       %+ margen derecho en paginas impares
+
+
+% castellano:
+\usepackage[spanish]{babel}
+
+%instalar texlive-lang-spanish
+% Reconocer acentos y caracteres no ingleses:
+
+\usepackage[utf8]{inputenc}
+
+
+% Cabecera y pie de página personalizadas
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+
+% Hago que en la cabecera de página se muestre a la derecha la sección,
+% y en el pie, en número de página a la derecha:
+
+\renewcommand{\sectionmark}[1]{\markboth{}{\thesection\ \ #1}}
+\lhead{}
+\chead{}
+\rhead{\rightmark}
+\lfoot{}
+\cfoot{}
+\rfoot{\thepage}
+
+
+%numeracion especial para tablas, figuras y ecuaciones
+\usepackage{amsmath}
+\numberwithin{equation}{section}
+\numberwithin{figure}{section}
+\numberwithin{table}{section}
+
+
+%Agregar notas al pie en tablas:
+\usepackage{threeparttable}
+
+
+%Incluir Graficos
+\usepackage{graphicx}
+
+
+%Usar subfiguras: (al estilo Figura 2.3(b) )
+\usepackage{subfigure}
+\usepackage{float}
+
+% Para esto es necesario texlive-latex-recommended o texlive-latex-extra
+
+%Numero de figuras en negrita
+\usepackage[hang,bf]{caption}
+
+
+% Todas las imágenes están en el directorio tp-img:
+\newcommand{\imgdir}{img}
+\graphicspath{{\imgdir/}}
+
+% uso de colores
+\usepackage{color}
+\definecolor{light-gray}{gray}{0.95}
+
+%Para embeber código de lenguajes como Matlab, C, html, etc.
+
+\usepackage{listings}
+\lstset{ %
+frameround=tttt,
+language=bash,                  % choose the language of the code
+basicstyle=\footnotesize,       % the size of the fonts that are used for the code
+stepnumber=1,                   % the step between two line-numbers. If it is 1 each line will be numbered
+backgroundcolor=\color{white},  % choose the background color. You must add \usepackage{color}
+showspaces=false,               % show spaces adding particular underscores
+showstringspaces=false,         % underline spaces within strings
+showtabs=false,                 % show tabs within strings adding particular underscores
+frame=single,           % adds a frame around the code
+tabsize=4,          % sets default tabsize to 2 spaces
+captionpos=b,           % sets the caption-position to bottom
+breaklines=true,        % sets automatic line breaking
+breakatwhitespace=false,    % sets if automatic breaks should only happen at whitespace
+escapeinside={\%*}{*)}          % if you want to add a comment within your code
+}
+
+\lstdefinestyle{consola}
+{basicstyle=\scriptsize\bf\ttfamily,
+backgroundcolor=\color{light-gray},
+}
+
+%Para colocar hipervinculos
+
+\usepackage[colorlinks=true,linkcolor=black,urlcolor=blue]{hyperref}
+
+%Para hacer matrices y digramas de flujo sencillos
+
+%\usepackage[all]{xy}
+\usepackage{pdfpages}
+
+
+%INICIO DEL DOCUMENTO
+
+%-------------------------------------------------------------------------------
+
+
+
+\begin{document}
+
+
+
+% CARATULA
+
+%-------------------------------------------------------------------------------
+
+
+
+\begin{titlepage}
+
+% Sin cabecera ni pie de página:
+
+\thispagestyle{empty}
+
+
+
+% Logo de la facu: 
+
+	\includegraphics[width=5cm]{logo-facu}
+
+\vfill
+
+
+
+% Título:
+
+\begin{center}
+	\Huge{Descripción de objetos}\\
+
+\end{center}
+
+\vspace{4cm}
+
+
+
+% Integrantes:
+
+\large{
+
+	\begin{tabbing}
+		Sergio Hinojosa \hspace{1cm} \\84476 \\
+	\end{tabbing}
+
+}
+
+\vfill
+
+% Fecha o cuatrimestre:
+
+%\flushright{2012}
+
+\end{titlepage}
+
+
+
+
+% Hago que las páginas se comiencen a contar a partir de aquí:
+
+\setcounter{page}{1}
+
+
+
+%INDICE
+
+%-------------------------------------------------------------------------------
+
+% Pongo el índice en una página aparte:
+
+%\tableofcontents
+
+%\newpage
+
+
+
+%-------------------------------------------------------------------------------
+
+
+% Inicio del TP:
+\section{Instalación}
+
+\subsection{En Ubuntu/Debian}
+
+\subsection{NeoDB}
+Instalar Neo:
+
+\begin{lstlisting}[style=consola, language=bash]
+$ apt-get install python-numpy python-pip
+$ pip install quantities
+$ apt-get install python-scipy
+$ apt-get install libhdf5-serial-dev python-numexpr cython
+$ pip install tables
+$ pip install neo
+\end{lstlisting}
+
+
+
+\end{document}

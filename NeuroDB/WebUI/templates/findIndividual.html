@@ -1,0 +1,17 @@
+$def with (form, individuals, msg)
+
+$if msg == 'noindividual':
+	<b>The individual did not find.
+
+$if form != None:
+	<form name="project" method="post"> 
+	    $:form.render()
+	</form> 
+
+$if individuals != []:
+	<form name="project" method="post">
+		$for i in individuals:
+			<input type="radio" name="individual" value="$i[0]">$i[1]<br>
+		
+		<input type="submit" value="Submit">
+	</form> 

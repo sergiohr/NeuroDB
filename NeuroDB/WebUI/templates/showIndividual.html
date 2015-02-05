@@ -1,0 +1,11 @@
+$def with (individual, picture)
+
+<font size=1>
+<br>Name: $individual['name']
+<br>Birth date: $individual['birth_date']
+<br>Description: $individual['description']
+
+$if picture != None :
+    <br><img src=/static/$picture width="200" border="3">
+
+</font>

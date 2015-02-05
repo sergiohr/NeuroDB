@@ -1,0 +1,17 @@
+$def with (form, projects, msg)
+
+$if msg == 'noproject':
+	<b>Projects did not find.
+
+$if form != None:
+	<form name="project" method="post"> 
+	    $:form.render()
+	</form> 
+
+$if projects != []:
+	<form name="project" method="post">
+		$for i in projects:
+			<input type="radio" name="project" value="$i[0]">$i[1]<br>
+		
+		<br><input type="submit" value="View">
+	</form> 
