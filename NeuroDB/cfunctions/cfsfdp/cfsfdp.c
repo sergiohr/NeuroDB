@@ -69,212 +69,159 @@ double mean(double v[], int n)
     return m/n;
 }
 
-/**
-  @brief Get Eclidean Distance within 2 3D points (P1 and P2).
-
-  P1 contains 3 components (float) x1, y1 and z1
-  P2 contains 3 components (float) x2, y2 and z2
-
-  @param x1
-  @param x2
-  @param y1
-  @param y2
-  @param z1
-  @param z2
-
-  @returns Eclidean Distance within P1 and P2
-  */
-float get_distance(float x1, float y1, float z1, float x2, float y2, float z2)
+float get_distance(float x1[], float x2[], int n)
 {
-    double tmp = pow(x1 - x2, 2) + pow(y1 - y2, 2) + pow(z1 - z2, 2);
+    int i;
+    double tmp = 0;
+    for(i=0; i<n; i++)
+    {
+        tmp = tmp + pow(x1[i] - x2[i], 2);
+    }
     return pow(tmp, 0.5);
 }
 
-
-/**
-  @brief Get Eclidean Distance within 2 3D points from a PGresult group of points.
-
-  Points are from structure PGresult (structure of libpq, that represent a result of a query): parameter res.
-  Each position of res, contains a point and the first 3 components of each position must be the components of
-  point, see example.
-  Points into structure are indexed by i and j parameters.
-
-  @param res, PGresult that contains in each position the 3 components of the point.
-  @param i, index of point i.
-  @param j, index of point j.
-
-  @returns Eclidean Distance within point j and point i from a PGresult.
-
-  Example:
-  \verbatim
-      float      distance;
-      PGconn     *conn;
-      PGresult   *res;
-      char       query[] = "SELECT spike.p1, spike.p2, spike.p3, spike.id from SPIKE JOIN
-                            segment ON id_segment = segment.id WHERE segment.id_block = 54";
-
-      conn = PQconnectdb("dbname=demo host=192.168.2.2 user=postgres password=postgres");
-
-      res = PQexec(conn,query);
-
-      distance = get_distance_from_res(res, 0, 1); //Euclidean distance within point 0 and point 1
-   \endverbatim
-
-  */
-float get_distance_from_res(PGresult *res, int i, int j)
+float get_distance_from_res(PGresult *res, int i, int j, int n)
 {
+    int k;
     float tmp;
-    float x1, x2, y1, y2, z1, z2;
-    sscanf(PQgetvalue(res, i, 0),"%f",&x1);
-    sscanf(PQgetvalue(res, i, 1),"%f",&y1);
-    sscanf(PQgetvalue(res, i, 2),"%f",&z1);
-    sscanf(PQgetvalue(res, j, 0),"%f",&x2);
-    sscanf(PQgetvalue(res, j, 1),"%f",&y2);
-    sscanf(PQgetvalue(res, j, 2),"%f",&z2);
-    tmp = get_distance(x1, y1, z1, x2, y2, z2);
+    float *x1 = calloc(n, sizeof(float));
+    float *x2 = calloc(n, sizeof(float));
 
+    for(k=0; k<n; k++)
+    {
+        sscanf(PQgetvalue(res, i, k),"%f",&(x1[k]));
+    }
+
+    for(k=0; k<n; k++)
+    {
+        sscanf(PQgetvalue(res, j, k),"%f",&(x2[k]));
+    }
+
+    tmp = get_distance(x1, x2, n);
+    free(x1);
+    free(x2);
     return tmp;
 
 }
 
-
-/**
-  @brief DC is a cutoff distance used by dp algorithm to consider a point closer of farther
-  to a center of point's density.
-
-  DC is the average number of neighbors, around 1 to 2% of the total number of points in the data set.
-
-  @param connect, string of data connect. See example.
-  @param id_block, id project block where this function calculates the dc.
-  @param percent, percent of the total number of points in the data set to consider.
-
-  @returns Cutoff distance, DC.
-
-  Example:
-  \verbatim
-      float      dc;
-      char connect[] = "dbname=demo host=192.168.2.2 user=postgres password=postgres";
-
-      dc = get_dc(connect, 54, 2);
-   \endverbatim
-
-  */
-float get_dc(char connect[], char id_block[], char channel[], float percent)
+char* build_query(char *id_block, char *channel, int n)
 {
-    char query[250];
-    strcpy(query, "SELECT spike.p1, spike.p2, spike.p3 from SPIKE ");
-    strcat(query, "JOIN segment ON id_segment = segment.id ");
+    char *query = (char*)malloc(sizeof(char)*500);
+    char aux[6];
+    int i;
+
+    strcpy(query, "SELECT ");
+
+    for(i=1; i<n+1; i++)
+    {
+        sprintf(aux, "p%d, ", i);
+        strcat(query, aux);
+    }
+
+    query[strlen(query)-2] = ' ';
+    query[strlen(query)-1] = '\0';
+
+    strcat(query, "from SPIKE JOIN segment ON id_segment = segment.id ");
     strcat(query, "JOIN recordingchannel ON id_recordingchannel = recordingchannel.id ");
     strcat(query, "WHERE segment.id_block = ");
     strcat(query, id_block);
     strcat(query, " AND recordingchannel.index = ");
     strcat(query, channel);
 
+    query = realloc(query, sizeof(char)*(strlen(query)+1));
+
+    return query;
+}
+
+float** get_distances(char connect[], char id_block[], char channel[], int n, int* rec_count)
+{
     PGconn          *conn;
     PGresult        *res;
-    int             rec_count;
+    int i, j;
+    char* query;
 
-    int n = 0, i, j;
-    float dc = 0.0;
-    float* distances = NULL;
-    int position;
+    float** distances;
 
     conn = PQconnectdb(connect);
-
     if (PQstatus(conn) == CONNECTION_BAD) {
         puts("We were unable to connect to the database");
-        return 0.0;
+        return NULL;
     }
+
+    query = build_query(id_block, channel, n);
+
     res = PQexec(conn,query);
 
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
         puts("get_dc: We did not get any data!");
-        return 0.0;
+        return NULL;
     }
 
-    rec_count = PQntuples(res);
-    distances = (float*)malloc(sizeof(float)*rec_count*rec_count);
+    *rec_count = PQntuples(res);
 
-    for (i = 0, n = 0; i < rec_count; i++) {
-          for (j = 0; j < rec_count; j++, n++) {
-                distances[n] = get_distance_from_res(res, i, j);
+    distances = (float**)malloc(*rec_count*sizeof(float*));
+
+    for(i=0; i<*rec_count; i++)
+    {
+        distances[i] = (float*)calloc(*rec_count,sizeof(float));
+    }
+
+    for(i=0; i<*rec_count; i++)
+    {
+        for(j=0; j<*rec_count; j++)
+        {
+            distances[i][j] = get_distance_from_res(res, i, j, n);
+        }
+    }
+
+    PQclear(res);
+    PQfinish(conn);
+    free(query);
+
+    return distances;
+}
+
+float get_dc(char connect[], char id_block[], char channel[], float percent, int n)
+{
+    float **distances;
+    float *array_distances;
+    float dc;
+
+    int i, j, k;
+    int rec_count;
+    int position;
+
+    distances = get_distances(connect, id_block, channel, n, &rec_count);
+    array_distances = calloc(rec_count*(rec_count+1)/2-rec_count, sizeof(float));
+
+    for (i = 0, k = 0; i < rec_count; i++) {
+          for (j = i+1 ; j < rec_count; j++, k++) {
+                array_distances[k] = distances[i][j];
           }
       }
 
     //There are rec_count zeros, because distances from itselfs
-    position = rec_count*percent/100 -1;//position = rec_count + 2*rec_count*percent/100 -1;
-    qsort(distances, rec_count, sizeof(float), &compare);
+    position = k*percent/100 -1;//position = rec_count + 2*rec_count*percent/100 -1;
+    qsort(array_distances, k, sizeof(float), &compare);
 
-    dc = distances[position];
+    dc = array_distances[position];
 
-    PQclear(res);
-    PQfinish(conn);
+    for (i = 0; i < rec_count; i++) {
+        free(distances[i]);
+    }
+    free(distances);
+    free(array_distances);
+
     return dc;
 }
 
-
-/**
-  @brief Local Density or Rho is basically equal to the number of points that are closer than dc to point i.
-
-  @param connect, string of data connect. See example.
-  @param id_block, id project block where this function calculates the dc.
-  @param local_density, array to return with local density of each point.
-  @param kernel, criteria of measure distance, it must be "cutoff" or "gaussian".
-
-  @returns Code Error (TODO)
-
-  \verbatim
-      float      dc;
-      char connect[] = "dbname=demo host=192.168.2.2 user=postgres password=postgres";
-      double* local_density = (double*)calloc(1026,sizeof(double));
-
-      dc = get_dc(connect, 54, 2);
-      get_local_density(connect, "54", dc, local_density, "gaussian");
-   \endverbatim
-
-  */
-int get_local_density(char connect[], char id_block[], char channel[], float dc, double* local_density, char kernel[20])
+int get_local_density(float** distances, int rec_count, float dc, double* local_density, char kernel[20])
 //TODO: Parameter size
 {
-
-    PGconn          *conn;
-    PGresult        *res;
-    int             rec_count;
-
-    char query[250];
     int i, j;
-    double distance;
+    float distance;
 
-    if (strcmp(kernel, "gaussian") && strcmp(kernel, "cutoff"))
-    {
-        puts("Kernel parameter must be \"gaussian\" or \"cutoff\".");
-        return 1;
-    }
-
-    strcpy(query, "SELECT spike.p1, spike.p2, spike.p3 from SPIKE ");
-    strcat(query, "JOIN segment ON id_segment = segment.id ");
-    strcat(query, "JOIN recordingchannel ON id_recordingchannel = recordingchannel.id ");
-    strcat(query, "WHERE segment.id_block = ");
-    strcat(query, id_block);
-    strcat(query, " AND recordingchannel.index = ");
-    strcat(query, channel);
-
-    conn = PQconnectdb(connect);
-
-    if (PQstatus(conn) == CONNECTION_BAD) {
-        puts("We were unable to connect to the database");
-        return 1;
-    }
-
-
-    res = PQexec(conn,query);
-
-    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        puts("get_local_density: We did not get any data!");
-        return 2;
-    }
-
-    rec_count = PQntuples(res);
+    printf("Local density - dc: %f\n", dc);
 
     for (i = 0; i < rec_count; i++) local_density[i] = 0;
 
@@ -282,7 +229,7 @@ int get_local_density(char connect[], char id_block[], char channel[], float dc,
     {
         for (i = 0; i < rec_count; i++) {
               for (j = i+1; j < rec_count; j++) {
-                    distance = get_distance_from_res(res, i, j);
+                    distance = distances[i][j];
                     if ( (distance - dc) < 0 )
                     {
                         local_density[i] += 1;
@@ -296,80 +243,21 @@ int get_local_density(char connect[], char id_block[], char channel[], float dc,
     {
         for (i = 0; i < rec_count; i++) {
               for (j = i+1; j < rec_count; j++) {
-                    distance = get_distance_from_res(res, i, j);
+                    distance = distances[i][j];
                     local_density[i] = local_density[i] + exp(-(distance/dc)*(distance/dc));
                     local_density[j] = local_density[j] + exp(-(distance/dc)*(distance/dc));
               }
           }
     }
 
-    PQclear(res);
-    PQfinish(conn);
-
     return 0;
 }
 
-/**
-  @brief Minimum Distance with higher density is measured by computing the minimum
-  distance between the point i and any other point with higher density.
-
-  @param connect, string of data connect. See example.
-  @param id_block, id project block.
-  @param rho, array from get_local_density.
-  @param delta, array to return.
-  @param size, array lenght.
-
-  @returns Code Error (TODO)
-
-  \verbatim
-      float      dc;
-      char connect[] = "dbname=demo host=192.168.2.2 user=postgres password=postgres";
-      double* local_density = (double*)calloc(1026,sizeof(double));
-      double* distance_to_higher_density = (double*)calloc(1026,sizeof(double));
-
-      dc = get_dc(connect, 54, 2);
-
-      get_local_density(connect, "54", dc, local_density, "gaussian");
-      get_distance_to_higher_density(connect, "54",local_density, distance_to_higher_density, 1026);
-
-
-   \endverbatim
-
-  */
-int get_distance_to_higher_density(char connect[], char id_block[], char channel[], double* rho, double* delta){
-
-    PGconn          *conn;
-    PGresult        *res;
-    int             rec_count;
+int get_distance_to_higher_density(float** distances, int rec_count, double* rho, double* delta){
 
     double dist;
     double tmp;
-    char query[250];
     int i, j, k, flag;
-
-    strcpy(query, "SELECT spike.p1, spike.p2, spike.p3 from SPIKE ");
-    strcat(query, "JOIN segment ON id_segment = segment.id ");
-    strcat(query, "JOIN recordingchannel ON id_recordingchannel = recordingchannel.id ");
-    strcat(query, "WHERE segment.id_block = ");
-    strcat(query, id_block);
-    strcat(query, " AND recordingchannel.index = ");
-    strcat(query, channel);
-
-    conn = PQconnectdb(connect);
-
-    if (PQstatus(conn) == CONNECTION_BAD) {
-        puts("We were unable to connect to the database");
-        return 1;
-    }
-
-    res = PQexec(conn,query);
-
-    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        puts("get_distance_to_higher_density: We did not get any data!");
-        return 2;
-    }
-
-    rec_count = PQntuples(res);
 
     for (i = 0; i < rec_count; i++)
         delta[i] = 0;
@@ -381,7 +269,7 @@ int get_distance_to_higher_density(char connect[], char id_block[], char channel
             if(i == j) continue;
             if(rho[j] > rho[i]){
 
-                tmp = get_distance_from_res(res, i, j);
+                tmp = distances[i][j];
 
                 if(!flag){
                     dist = tmp;
@@ -391,181 +279,34 @@ int get_distance_to_higher_density(char connect[], char id_block[], char channel
         }
         if(!flag){
             for(k = 0; k < rec_count; k++){
-                tmp = get_distance_from_res(res, i, k);
+                tmp = distances[i][k];
                 dist = tmp > dist ? tmp : dist;
             }
         }
         delta[i] = dist;
     }
 
-    PQclear(res);
-    PQfinish(conn);
-
     return 0;
 }
 
-/**
-  @brief Select centers of clusters
-
-  @param connect, string of data connect. See example.
-  @param id_block, id project block.
-  @param channel, index of channel.
-  @param centers, array where centers are returned.
-  @param dc, see get_dc .
-
-  @returns Code Error (TODO)
-
-  \verbatim
-      float      dc;
-      char connect[] = "dbname=demo host=192.168.2.2 user=postgres password=postgres";
-      double* centers = (double*)calloc(1026,sizeof(double));
-
-      dc = get_dc(connect, "54", "3", 2);
-
-      get_centers_cluster_dp(connect, "54", "3", centers, dc);
-
-   \endverbatim
-
-  */
-int get_centers_cluster_dp(char connect[], char id_block[], char channel[], double* centers, double dc)
+int cluster_dp(char connect[], char id_block[], char channel[], double* rho, double *delta, double* id_spike, double* index_cluster, float dc, int n, char kernel[20])
 {
-    PGconn          *conn;
-    PGresult        *res;
-    int             rec_count;
-
-    char query[250];
-    double* local_density;
-    double* distance_to_higher_density;
-    double* gamma;
-    float meanf;
+    float **distances;
+    int rec_count;
     int i;
 
-    conn = PQconnectdb(connect);
+    distances = get_distances(connect, id_block, channel, n, &rec_count);
 
-    strcpy(query, "SELECT spike.id, spike.p1, spike.p2, spike.p3 from SPIKE ");
-    strcat(query, "JOIN segment ON id_segment = segment.id ");
-    strcat(query, "JOIN recordingchannel ON id_recordingchannel = recordingchannel.id ");
-    strcat(query, "WHERE segment.id_block = ");
-    strcat(query, id_block);
-    strcat(query, " AND recordingchannel.index = ");
-    strcat(query, channel);
+    get_local_density(distances, rec_count, dc, rho, kernel);
+    get_distance_to_higher_density(distances, rec_count, rho, delta);
 
-    if (PQstatus(conn) == CONNECTION_BAD) {
-        puts("cluster_dp: We were unable to connect to the database");
-        return 1;
+    for (i = 0; i < rec_count; i++) {
+        free(distances[i]);
     }
+    free(distances);
 
-    res = PQexec(conn,query);
-    rec_count = PQntuples(res);
-    local_density = (double*)calloc(rec_count,sizeof(double));
-    distance_to_higher_density = (double*)calloc(rec_count,sizeof(double));
-    gamma = (double*)calloc(rec_count,sizeof(double));
-
-    get_local_density(connect, id_block, channel, dc, local_density, "gaussian");
-    get_distance_to_higher_density(connect, id_block, channel, local_density, distance_to_higher_density);
-
-    Quicksort(distance_to_higher_density, local_density, 0, rec_count-1);
-
-    // gamma is rho*delta
-    for(i=0; i<rec_count; i++)
-    {
-        gamma[i] = i*distance_to_higher_density[i];
-    }
-
-    //points > 5*mean are centers of cluster
-    meanf = mean(gamma, rec_count);
-
-    centers[0] = 0;
-    for(i=0; i<rec_count; i++)
-    {
-        if (gamma[i] > 2.5*meanf)
-        {
-            //sscanf(PQgetvalue(res, i, 0),"%lf",&centers[(int)centers[0]+1]);
-            centers[(int)centers[0]+1] = i;
-            centers[0]++;
-        }
-    }
-    return 0;
-    // centers contains index of spike centers, centers[0] is lenght of center
-}
-
-/**
-  @brief From a center, returns all spikes ids with distance minor than dc to the center
-
-  @param connect, string of data connect. See example.
-  @param id_block, id project block.
-  @param channel, index of channel.
-  @param center, index of the center of cluster to returned
-  @param cluster, array where the cluster are returned, it contains ids of spikes.
-  @param dc, see get_dc .
-
-  @returns Code Error (TODO)
-
-  \verbatim
-      float      dc;
-      char connect[] = "dbname=demo host=192.168.2.2 user=postgres password=postgres";
-      double* centers = (double*)calloc(1026,sizeof(double));
-      double* cluster = (double*)calloc(1026,sizeof(double));
-
-      dc = get_dc(connect, "54", "3", 2);
-
-      get_centers_cluster_dp(connect, "54", "3", centers, dc);
-      get_cluster_dp(connect, "54", "3", centers[2], cluster, dc);
-
-   \endverbatim
-
-  */
-int get_cluster_dp(char connect[], char id_block[], char channel[], double center, double* cluster, double dc)
-{
-    PGconn          *conn;
-    PGresult        *res;
-    int             rec_count;
-
-    char query[250];
-    int i, j;
-    float distance;
-    float x1, x2, y1, y2, z1, z2, aux;
-
-    conn = PQconnectdb(connect);
-
-    strcpy(query, "SELECT spike.id, spike.p1, spike.p2, spike.p3 from SPIKE ");
-    strcat(query, "JOIN segment ON id_segment = segment.id ");
-    strcat(query, "JOIN recordingchannel ON id_recordingchannel = recordingchannel.id ");
-    strcat(query, "WHERE segment.id_block = ");
-    strcat(query, id_block);
-    strcat(query, " AND recordingchannel.index = ");
-    strcat(query, channel);
-
-    if (PQstatus(conn) == CONNECTION_BAD) {
-        puts("cluster_dp: We were unable to connect to the database");
-        return 1;
-    }
-
-    res = PQexec(conn,query);
-    rec_count = PQntuples(res);
-
-    i = 1;
-    for(j=0; j<rec_count; j++)
-    {
-        sscanf(PQgetvalue(res, center, 1),"%f",&x1);
-        sscanf(PQgetvalue(res, center, 2),"%f",&y1);
-        sscanf(PQgetvalue(res, center, 3),"%f",&z1);
-        sscanf(PQgetvalue(res, j, 1),"%f",&x2);
-        sscanf(PQgetvalue(res, j, 2),"%f",&y2);
-        sscanf(PQgetvalue(res, j, 3),"%f",&z2);
-        distance = get_distance(x1, y1, z1, x2, y2, z2);
-
-        if (distance <= dc)
-        {
-            sscanf(PQgetvalue(res, j, 0), "%f", &aux);
-            cluster[i] = (double)aux;
-            i++;
-        }
-        cluster[0] = i;
-    }
     return 0;
 }
-
 
 int get_n_dbspikes(char connect[], char id_block[], char channel[])
 {
@@ -598,148 +339,117 @@ int get_n_dbspikes(char connect[], char id_block[], char channel[])
 }
 
 
-int main(int argc, char* argv[])
-{
-    //float dc = 0;
-    int i;
-    double* local_density = (double*)calloc(1026,sizeof(double));
-    double* distance_to_higher_density = (double*)calloc(1026,sizeof(double));
-    //double* gamma = (double*)calloc(1026,sizeof(double));
-    double* centers = (double*)calloc(1026,sizeof(double));
-    double* cluster = (double*)calloc(1026,sizeof(double));
-    //double** clusters;
-//
-    float dc = get_dc("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54", "3", 2);
-//
-//    get_local_density("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54", dc, local_density, "gaussian");
-//
-//    get_distance_to_higher_density("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54",local_density, distance_to_higher_density, 1026);
-//
-    get_centers_cluster_dp("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54", "3", centers, dc);
-
-    get_cluster_dp("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54", "3", centers[2], cluster, dc);
-//
-//    clusters = get_cluster_dp("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54", centers);
-
-    return 1;
-}
-
-
-/*
-double* get_centers_cluster_dp(char connect[], char id_block[])
+int get_clusters(char connect[], char id_block[], char channel[], double* centers, double* spikes_id, double* index_cluster, int n, float dc)
 {
     PGconn          *conn;
     PGresult        *res;
-    int             rec_count;
 
-    char query[200];
-    float dc;
-    double* local_density;
-    double* distance_to_higher_density;
-    double* gamma;
-    float meanf;
-    double* centers = NULL;
-    int k=0, i;
+    float **distances;
+    int rec_count, i, j;
+    float mindistance;
+    char query[250];
+    float value;
+
+    distances = get_distances(connect, id_block, channel, n, &rec_count);
 
     conn = PQconnectdb(connect);
-
-    strcpy(query,"SELECT spike.id, spike.p1, spike.p2, spike.p3 from SPIKE JOIN  segment ON id_segment = segment.id WHERE segment.id_block = ");
+    strcpy(query, "SELECT spike.id from SPIKE ");
+    strcat(query, "JOIN segment ON id_segment = segment.id ");
+    strcat(query, "JOIN recordingchannel ON id_recordingchannel = recordingchannel.id ");
+    strcat(query, "WHERE segment.id_block = ");
     strcat(query, id_block);
-
-    if (PQstatus(conn) == CONNECTION_BAD) {
-        puts("cluster_dp: We were unable to connect to the database");
-        return NULL;
-    }
-
+    strcat(query, " AND recordingchannel.index = ");
+    strcat(query, channel);
     res = PQexec(conn,query);
-    rec_count = PQntuples(res);
-    local_density = (double*)calloc(rec_count,sizeof(double));
-    distance_to_higher_density = (double*)calloc(rec_count,sizeof(double));
-    gamma = (double*)calloc(rec_count,sizeof(double));
 
-    dc = get_dc("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54", 2);
-
-    get_local_density("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54", dc, local_density, "gaussian");
-    get_distance_to_higher_density("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54",local_density, distance_to_higher_density);
-
-    Quicksort(distance_to_higher_density, local_density, 0, rec_count-1);
-
-    // gamma is rho*delta
-    for(i=0; i<rec_count; i++)
-    {
-        gamma[i] = i*distance_to_higher_density[i];
-    }
-
-    //points > 5*mean are centers of cluster
-    meanf = mean(gamma, rec_count);
-    centers = (double*)malloc(sizeof(double));
-
-    centers[0] = 0;
-    for(i=0; i<rec_count; i++)
-    {
-        if (gamma[i] > 2.5*meanf)
+    if (centers[0] == 1)
+    {   for(i = 0; i<rec_count; i++)
         {
-            centers = (double*)realloc(centers, sizeof(double)*(centers[0]+1));
-            //sscanf(PQgetvalue(res, i, 0),"%lf",&centers[(int)centers[0]+1]);
-            centers[(int)centers[0]+1] = i;
-            centers[0]++;
-        }
-    }
-    // centers contains index of spike centers, centers[0] is lenght of center
-    return centers;
-}*/
-
-/*double** get_cluster_dp(char connect[], char id_block[], double* centers)
-{
-    PGconn          *conn;
-    PGresult        *res;
-    int             rec_count;
-
-    char query[200];
-    int i, j;
-    double** clusters;
-    float dc, distance;
-    float x1, x2, y1, y2, z1, z2, aux;
-
-    conn = PQconnectdb(connect);
-
-    strcpy(query,"SELECT spike.id, spike.p1, spike.p2, spike.p3 from SPIKE JOIN  segment ON id_segment = segment.id WHERE segment.id_block = ");
-    strcat(query, id_block);
-
-    if (PQstatus(conn) == CONNECTION_BAD) {
-        puts("cluster_dp: We were unable to connect to the database");
-        return NULL;
-    }
-
-    res = PQexec(conn,query);
-    rec_count = PQntuples(res);
-
-    dc = get_dc("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54", 2);
-    if((centers != NULL)&&(centers[0] > 0))
-    {
-        clusters = (double**)malloc(sizeof(double*)*centers[0]);
-        for(i=1; i<centers[0]+1; i++)
-        {
-            clusters[i-1] = (double*)calloc(1,sizeof(double));
-            for(j=0; j<rec_count; j++)
+            mindistance = distances[(int)centers[1]][i];
+            index_cluster[i] = i;
+            sscanf(PQgetvalue(res, i, 0),"%f",&value);
+            spikes_id[i] = value;
+            if (mindistance < 4*dc)
             {
-                sscanf(PQgetvalue(res, centers[i], 1),"%f",&x1);
-                sscanf(PQgetvalue(res, centers[i], 2),"%f",&y1);
-                sscanf(PQgetvalue(res, centers[i], 3),"%f",&z1);
-                sscanf(PQgetvalue(res, j, 1),"%f",&x2);
-                sscanf(PQgetvalue(res, j, 2),"%f",&y2);
-                sscanf(PQgetvalue(res, j, 3),"%f",&z2);
-                distance = get_distance(x1, y1, z1, x2, y2, z2);
-                if (distance <= dc/4)
-                {
-                    clusters[i-1] = (double*)realloc(clusters[i-1], sizeof(double)*(clusters[i-1][0]+2));
-                    sscanf(PQgetvalue(res, j, 0), "%f", &aux);
-                    clusters[i-1][(int)clusters[i-1][0]+1] = (double)aux;
-                    clusters[i-1][0]++;
-                }
+                index_cluster[i] = 1;
+            }
+            else{
+                index_cluster[i] = 0;
             }
         }
     }
 
-    return clusters;
-}*/
+    if (centers[0] >= 2) //there are 2 centers, at least
+    {
+        for(i = 0; i<rec_count; i++)//count spikes
+        {
+            //i guess center[1] have the min distance
+            mindistance = distances[(int)centers[1]][i];
+            index_cluster[i] = 1;
+            sscanf(PQgetvalue(res, i, 0),"%f",&value);
+            spikes_id[i] = value;
+            for(j=2; j<centers[0]+1; j++)
+            {
+                if (mindistance > distances[(int)centers[j]][i])
+                {
+                    index_cluster[i] = j;
+                    mindistance = distances[(int)centers[j]][i];
+                }
+            }
+
+            if (mindistance > 2.4*dc)
+            {
+                index_cluster[i] = 0;
+            }
+        }
+    }
+
+    for (i = 0; i < rec_count; i++) {
+        free(distances[i]);
+    }
+    free(distances);
+    PQclear(res);
+    PQfinish(conn);
+    return 0;
+}
+
+int main(int argc, char* argv[])
+{
+    //float dc = 0;
+    char connect[100] = "dbname=demo host=192.168.2.2 user=postgres password=postgres";
+    double* local_density = (double*)calloc(1026,sizeof(double));
+    double* distance_to_higher_density = (double*)calloc(1026,sizeof(double));
+    //double* gamma = (double*)calloc(1026,sizeof(double));
+    double* centers = (double*)calloc(3,sizeof(double));
+    //double* cluster = (double*)calloc(1026,sizeof(double));
+    double** clusters = (double**)malloc(sizeof(double*)*2);
+    clusters[0] = (double*)calloc(1026,sizeof(double));
+    clusters[1] = (double*)calloc(1026,sizeof(double));
+//
+    float dc = get_dc(connect, "54", "3", 2.0, 3);
+
+    //cluster_dp(connect, "54", "3", local_density, distance_to_higher_density, clusters[0], clusters[1], dc, 10, "gaussian");
+//
+//    get_distance_to_higher_density3("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54", "3", local_density, distance_to_higher_density);
+//
+    //get_centers_cluster_dp("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54", "3", centers, dc);
+
+    //get_cluster_dp("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54", "3", centers[2], cluster, dc);
+//
+//    clusters = get_cluster_dp("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54", centers);
+
+    //get_cluster_dp2("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54", "3", clusters[0], clusters[1], dc);
+
+    centers[0]=1;
+    centers[1]=363;
+    get_clusters(connect, "54", "3", centers, clusters[0], clusters[1], 3, dc);
+
+    free(clusters[0]);
+    free(clusters[1]);
+    free(centers);
+    free(clusters);
+    free(local_density);
+    free(distance_to_higher_density);
+
+    return 1;
+}
