@@ -253,11 +253,12 @@ int get_local_density(float** distances, int rec_count, float dc, double* local_
     return 0;
 }
 
-int get_distance_to_higher_density(float** distances, int rec_count, double* rho, double* delta){
+int get_distance_to_higher_density(float** distances, int rec_count, double* rho, double* delta, double* nneigh){
 
     double dist;
     double tmp;
     int i, j, k, flag;
+    int index_nneigh;
 
     for (i = 0; i < rec_count; i++)
         delta[i] = 0;
@@ -271,25 +272,35 @@ int get_distance_to_higher_density(float** distances, int rec_count, double* rho
 
                 tmp = distances[i][j];
 
-                if(!flag){
+                if(!flag){ //first time
                     dist = tmp;
+                    index_nneigh = j;
                     flag = 1;
-                }else dist = tmp < dist ? tmp : dist;
+                }else{
+                    if (tmp < dist) {
+                        dist = tmp;
+                        index_nneigh = j;
+                    }
+                }
             }
         }
         if(!flag){
             for(k = 0; k < rec_count; k++){
                 tmp = distances[i][k];
-                dist = tmp > dist ? tmp : dist;
+                if (tmp > dist) {
+                    dist = tmp;
+                    index_nneigh = k;
+                }
             }
         }
         delta[i] = dist;
+        nneigh[i] = index_nneigh;
     }
 
     return 0;
 }
 
-int cluster_dp(char connect[], char id_block[], char channel[], double* rho, double *delta, double* id_spike, double* index_cluster, float dc, int n, char kernel[20])
+int cluster_dp(char connect[], char id_block[], char channel[], double* rho, double *delta, double* id_spike, double* index_cluster, double* nneigh, float dc, int n, char kernel[20])
 {
     float **distances;
     int rec_count;
@@ -298,7 +309,7 @@ int cluster_dp(char connect[], char id_block[], char channel[], double* rho, dou
     distances = get_distances(connect, id_block, channel, n, &rec_count);
 
     get_local_density(distances, rec_count, dc, rho, kernel);
-    get_distance_to_higher_density(distances, rec_count, rho, delta);
+    get_distance_to_higher_density(distances, rec_count, rho, delta, nneigh);
 
     for (i = 0; i < rec_count; i++) {
         free(distances[i]);
@@ -339,18 +350,20 @@ int get_n_dbspikes(char connect[], char id_block[], char channel[])
 }
 
 
-int get_clusters(char connect[], char id_block[], char channel[], double* centers, double* spikes_id, double* index_cluster, int n, float dc)
+int get_clusters(char connect[], char id_block[], char channel[], double* rho, double* centers, double* spikes_id, double* index_cluster, double* clust, int points, float dc)
 {
     PGconn          *conn;
     PGresult        *res;
 
     float **distances;
     int rec_count, i, j;
-    float mindistance;
+    double rho_average;
     char query[250];
     float value;
 
-    distances = get_distances(connect, id_block, channel, n, &rec_count);
+    double* bord_rho = (double*)calloc((int)centers[0],sizeof(double));
+
+    distances = get_distances(connect, id_block, channel, points, &rec_count);
 
     conn = PQconnectdb(connect);
     strcpy(query, "SELECT spike.id from SPIKE ");
@@ -362,46 +375,32 @@ int get_clusters(char connect[], char id_block[], char channel[], double* center
     strcat(query, channel);
     res = PQexec(conn,query);
 
-    if (centers[0] == 1)
-    {   for(i = 0; i<rec_count; i++)
+    if (centers[0]>1)
+    {
+        for(i=0; i<rec_count-1; i++)
         {
-            mindistance = distances[(int)centers[1]][i];
-            index_cluster[i] = i;
-            sscanf(PQgetvalue(res, i, 0),"%f",&value);
-            spikes_id[i] = value;
-            if (mindistance < 4*dc)
+            for(j=i+1; j<rec_count; j++)
             {
-                index_cluster[i] = 1;
+                if ((clust[i]!=clust[j]) && (distances[i][j] <= dc))
+                {
+                    rho_average = (rho[i]+rho[j])/2.0;
+                    if (rho_average > bord_rho[(int)clust[i]])
+                        bord_rho[(int)clust[i]] = rho_average;
+                    if (rho_average > bord_rho[(int)clust[j]])
+                        bord_rho[(int)clust[j]] = rho_average;
+                }
             }
-            else{
-                index_cluster[i] = 0;
-            }
+        }
+        for(i=0; i<rec_count; i++)
+        {
+            if (rho[i] < bord_rho[(int)clust[i]])
+                clust[i] = 0;
         }
     }
 
-    if (centers[0] >= 2) //there are 2 centers, at least
-    {
-        for(i = 0; i<rec_count; i++)//count spikes
-        {
-            //i guess center[1] have the min distance
-            mindistance = distances[(int)centers[1]][i];
-            index_cluster[i] = 1;
-            sscanf(PQgetvalue(res, i, 0),"%f",&value);
-            spikes_id[i] = value;
-            for(j=2; j<centers[0]+1; j++)
-            {
-                if (mindistance > distances[(int)centers[j]][i])
-                {
-                    index_cluster[i] = j;
-                    mindistance = distances[(int)centers[j]][i];
-                }
-            }
-
-            if (mindistance > 2.4*dc)
-            {
-                index_cluster[i] = 0;
-            }
-        }
+    for (i = 0; i < rec_count; i++) {
+        sscanf(PQgetvalue(res, i, 0),"%f",&value);
+        spikes_id[i] = value;
     }
 
     for (i = 0; i < rec_count; i++) {
@@ -442,7 +441,7 @@ int main(int argc, char* argv[])
 
     centers[0]=1;
     centers[1]=363;
-    get_clusters(connect, "54", "3", centers, clusters[0], clusters[1], 3, dc);
+    //get_clusters(connect, "54", "3", centers, clusters[0], clusters[1], 3, dc);
 
     free(clusters[0]);
     free(clusters[1]);
