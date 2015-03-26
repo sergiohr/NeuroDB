@@ -350,7 +350,7 @@ int get_n_dbspikes(char connect[], char id_block[], char channel[])
 }
 
 
-int get_clusters(char connect[], char id_block[], char channel[], double* rho, double* centers, double* spikes_id, double* index_cluster, double* clust, int points, float dc)
+int get_clusters(char connect[], char id_block[], char channel[], double* rho, double* centers, double* spikes_id, double* cluster_index, int points, float dc)
 {
     PGconn          *conn;
     PGresult        *res;
@@ -381,20 +381,21 @@ int get_clusters(char connect[], char id_block[], char channel[], double* rho, d
         {
             for(j=i+1; j<rec_count; j++)
             {
-                if ((clust[i]!=clust[j]) && (distances[i][j] <= dc))
+                //printf("dist: %lf, dc: %f\n", distances[i][j], dc);
+                if ((cluster_index[i]!=cluster_index[j]) && (distances[i][j] <= dc))
                 {
                     rho_average = (rho[i]+rho[j])/2.0;
-                    if (rho_average > bord_rho[(int)clust[i]])
-                        bord_rho[(int)clust[i]] = rho_average;
-                    if (rho_average > bord_rho[(int)clust[j]])
-                        bord_rho[(int)clust[j]] = rho_average;
+                    if (rho_average > bord_rho[(int)cluster_index[i]])
+                        bord_rho[(int)cluster_index[i]] = rho_average;
+                    if (rho_average > bord_rho[(int)cluster_index[j]])
+                        bord_rho[(int)cluster_index[j]] = rho_average;
                 }
             }
         }
         for(i=0; i<rec_count; i++)
         {
-            if (rho[i] < bord_rho[(int)clust[i]])
-                clust[i] = 0;
+            if (rho[i] < bord_rho[(int)cluster_index[i]])
+                cluster_index[i] = 0;
         }
     }
 
