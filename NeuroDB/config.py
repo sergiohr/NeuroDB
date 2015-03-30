@@ -10,7 +10,7 @@ TEMP_FOLDER = '/tmp/neurodbtmp'
 PROJECT_PATH = ''
 
 # DB config
-DBHOSTNAME = '192.168.2.2'
+DBHOSTNAME = '172.16.162.128'
 DBUSER = 'postgres'
 DBPASSWORD = 'postgres'
 DBNAME = 'demo'

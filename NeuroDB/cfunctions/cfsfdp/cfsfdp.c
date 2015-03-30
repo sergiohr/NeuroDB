@@ -356,12 +356,12 @@ int get_clusters(char connect[], char id_block[], char channel[], double* rho, d
     PGresult        *res;
 
     float **distances;
-    int rec_count, i, j;
-    double rho_average;
+    int rec_count, i, j, k;
+    double rho_average, mdist;
     char query[250];
     float value;
 
-    double* bord_rho = (double*)calloc((int)centers[0],sizeof(double));
+    double* bord_rho = (double*)calloc((int)centers[0]+1,sizeof(double));
 
     distances = get_distances(connect, id_block, channel, points, &rec_count);
 
@@ -408,6 +408,7 @@ int get_clusters(char connect[], char id_block[], char channel[], double* rho, d
         free(distances[i]);
     }
     free(distances);
+    free(bord_rho);
     PQclear(res);
     PQfinish(conn);
     return 0;

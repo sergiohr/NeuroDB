@@ -387,11 +387,14 @@ def draw_clusters(clusters, path = None):
     
     for i in range(ncluster):
         plt.subplot(ncluster,1,i)
+        k = 0
         
         for id_spike in clusters[i]:
             spike = neodb.core.spikedb.get_from_db(NDB, id_block = 54, channel = 3, id = int(id_spike))
             plt.plot(spike[0].waveform)
-            
+            k = k+1
+        title = str(i) + ": " + str(k)
+        plt.title(title)
     if path:
         plt.savefig(path)
     else:
@@ -403,7 +406,7 @@ def draw_clusters(clusters, path = None):
 def update_spike_coordenates(id_block, channel):
     #TODO: Create p1, p2 y p3 columns
     global NDB
-    
+    from sklearn.preprocessing import normalize
     if NDB == None:
         connect_db()
         
@@ -412,17 +415,20 @@ def update_spike_coordenates(id_block, channel):
     
     for spike in spikes:
         mspikes.append(spike.waveform)
+    mspikes = np.array(mspikes)
     
-    pca = PCA(n_components=3)
+    pca = PCA(n_components=10)
+    #mspikes = normalize(mspikes)
     transf = pca.fit_transform(mspikes)
     
+    #transf = Sorter.wave_features(mspikes, 10)
     
     spikes_id = neodb.core.spikedb.get_ids_from_db(NDB, id_block, channel)
     
     i = 0
     for p in transf:
         id = spikes_id[i]
-        neodb.core.spikedb.update(NDB, id = id, p1 = p[0], p2 = p[1], p3 = p[2])
+        neodb.core.spikedb.update(NDB, id = id, p1 = p[0], p2 = p[1], p3 = p[2], p4 = p[3], p5 = p[4], p6 = p[5], p7 = p[6], p8 = p[7], p9 = p[8], p10 = p[9])
         i = i+1
     
 
@@ -457,10 +463,10 @@ if __name__ == '__main__':
     #last_file('/home/sergio/iibm/sandbox')
 
     #save_channel_spikes(54, 3)
-    #update_spike_coordenates(54, 3)
+    update_spike_coordenates(54, 3)
     
     #clusters = get_clusters(54, 3, 'paramagnetic', save=True)
-    clusters = get_clusters('54', '3', 'dp', save=True)
-    draw_clusters(clusters)
+    #clusters = get_clusters('54', '3', 'dp', save=True)
+    #draw_clusters(clusters)
     
     pass

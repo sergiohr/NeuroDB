@@ -19,6 +19,83 @@ import neodb.core
 
 #TODO: approach use a classes to define the sorter. Change the approach to simples functions
 
+
+def __test_ks(x):
+    x = x[np.invert(np.isnan(x))]
+    n = len(x)
+    x = np.sort(x)
+    # Get cumulative sums
+    yCDF = np.array(np.arange(n)+1) / float(n)
+    # Remove duplicates; only need final one with total count
+    notdup = np.append(np.diff(x), 1) > 0
+    x_expcdf = x[notdup]
+    y_expcdf = np.append(0, yCDF[notdup])
+    
+    # The theoretical CDF (theocdf) is assumed to be normal  
+    # with unknown mean and sigma
+
+    zScores  =  (x_expcdf - np.mean(x))/np.std(x, ddof=1)
+    
+    mu = 0
+    sigma = 1
+    theocdf = 0.5 * erfc(-(zScores-mu)/(np.sqrt(2)*sigma))
+    
+    delta1    =  y_expcdf[0:len(y_expcdf)-1] - theocdf   # Vertical difference at jumps approaching from the LEFT.
+    delta2    =  y_expcdf[1:len(y_expcdf)] - theocdf   # Vertical difference at jumps approaching from the RIGHT.
+    deltacdf  =  np.abs(np.concatenate((delta1, delta2), axis=0))
+
+    return  np.max(deltacdf)
+
+def __wavedec(x , n, type):
+    c = []
+    l = np.zeros([n+2])
+    
+    if (x == []):
+        return
+    
+    l[len(l)-1] = len(x)
+    for k in range(n):
+        w = pywt.dwt(x,type) # decomposition
+        x = w[0]
+        c =  np.concatenate((w[1],c),axis=0) # store detail
+        l[n-k] = len(w[1]) # store length
+        
+    c = np.concatenate((w[0],c),axis=0)
+    l[0] = len(w[0])
+
+    return c , l
+    
+def wave_features(spikes, inputs):
+    nspk = len(spikes)
+    ls = len(spikes[0])
+    cc = np.zeros([nspk,ls])
+    for i in range(nspk):
+        c, l = __wavedec(spikes[i,:],4,'db1')
+        cc[i,0:ls] = c[0:ls]
+    
+    sd = np.array([])
+    for i in range(ls):             # KS test for coefficient selection   
+        thr_dist = np.std(cc[:,i], ddof=1) * 3
+        thr_dist_min = np.mean(cc[:,i]) - thr_dist
+        thr_dist_max = np.mean(cc[:,i]) + thr_dist
+        #aux contains values between thr_dist_min and thr_dist_max of cc[:,i]
+        aux = cc[ [j for (j, val) in enumerate(cc[:,i]) if (val > thr_dist_min and val < thr_dist_max)],i ]
+        if len(aux) > inputs:
+            ksstat = __test_ks(aux)
+            sd = np.append(sd, ksstat)
+        else:
+            sd = np.append(sd, 0)
+
+    ind = sd.ravel().argsort()
+    coeff = ind[ls-1:ls-inputs-1:-1]
+    
+    inspk = np.zeros([nspk,inputs])
+    for i in range(nspk):
+        for j in range(inputs):
+            inspk[i,j]=cc[i,coeff[j]]
+    
+    return inspk
+
 class ParamagneticSorter():
     '''
     classdocs
@@ -181,10 +258,10 @@ class ParamagneticSorter():
         
         l[len(l)-1] = len(x)
         for k in range(n):
-            w = pywt.dwt(x,type)        # decomposition
+            w = pywt.dwt(x,type) # decomposition
             x = w[0]
-            c =  np.concatenate((w[1],c),axis=0)            # store detail
-            l[n-k] = len(w[1])    # store length
+            c =  np.concatenate((w[1],c),axis=0) # store detail
+            l[n-k] = len(w[1]) # store length
             
         c = np.concatenate((w[0],c),axis=0)
         l[0] = len(w[0])
@@ -204,6 +281,7 @@ class ParamagneticSorter():
             thr_dist = np.std(cc[:,i], ddof=1) * 3
             thr_dist_min = np.mean(cc[:,i]) - thr_dist
             thr_dist_max = np.mean(cc[:,i]) + thr_dist
+            #aux contains values between thr_dist_min and thr_dist_max of cc[:,i]
             aux = cc[ [j for (j, val) in enumerate(cc[:,i]) if (val > thr_dist_min and val < thr_dist_max)],i ]
             if len(aux) > 10:
                 ksstat = self.__test_ks(aux)
