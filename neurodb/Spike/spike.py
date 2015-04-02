@@ -88,10 +88,7 @@ class Detector():
         
         try:
             for i in range(nspk):
-                if i == 970:
-                    pass
                 if spikes[i,:].any():
-                    print i
                     intspikes = interpolate.spline(s,spikes[i,:],ints)
                     iaux = intspikes[self.w_pre*self.int_factor-1:self.w_pre*self.int_factor+8].argmax(0)
                     iaux = iaux + self.w_pre*self.int_factor-1
@@ -110,7 +107,7 @@ class Detector():
                 else:
                     spikes1[i,:] = spikes[i,0:ls]
         except:
-            print i
+            print 'except __int_spikes'
         return spikes1
 
     def __amp_detect(self, x):

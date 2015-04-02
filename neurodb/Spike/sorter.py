@@ -15,7 +15,7 @@ import ctypes
 import numpy.ctypeslib as npct
 import matplotlib.pyplot as plt
 import psycopg2
-import neodb.core
+from .. import neodb
 
 #TODO: approach use a classes to define the sorter. Change the approach to simples functions
 

@@ -144,7 +144,7 @@ float** get_distances(char connect[], char id_block[], char channel[], int n, in
 
     conn = PQconnectdb(connect);
     if (PQstatus(conn) == CONNECTION_BAD) {
-        puts("We were unable to connect to the database");
+        printf("We were unable to connect to the database");
         return NULL;
     }
 
@@ -153,7 +153,7 @@ float** get_distances(char connect[], char id_block[], char channel[], int n, in
     res = PQexec(conn,query);
 
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        puts("get_dc: We did not get any data!");
+        printf("get_dc: We did not get any data!");
         return NULL;
     }
 
@@ -417,7 +417,7 @@ int get_clusters(char connect[], char id_block[], char channel[], double* rho, d
 int main(int argc, char* argv[])
 {
     //float dc = 0;
-    char connect[100] = "dbname=demo host=192.168.2.2 user=postgres password=postgres";
+    char connect[100] = "dbname=demo host=172.16.162.128 user=postgres password=postgres";
     double* local_density = (double*)calloc(1026,sizeof(double));
     double* distance_to_higher_density = (double*)calloc(1026,sizeof(double));
     //double* gamma = (double*)calloc(1026,sizeof(double));
@@ -427,7 +427,7 @@ int main(int argc, char* argv[])
     clusters[0] = (double*)calloc(1026,sizeof(double));
     clusters[1] = (double*)calloc(1026,sizeof(double));
 //
-    float dc = get_dc(connect, "54", "3", 2.0, 3);
+    float dc = get_dc(connect, "57", "24", 2.0, 3);
 
     //cluster_dp(connect, "54", "3", local_density, distance_to_higher_density, clusters[0], clusters[1], dc, 10, "gaussian");
 //

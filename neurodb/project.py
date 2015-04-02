@@ -4,22 +4,8 @@ Created on Dec 22, 2013
 @author: Sergio Hinojosa Rojas
 '''
 
-# import ctypes
-# import NeuroDB.config as config
-# import os
-# import re
-# import numpy as np
-# import neo.core
-# from neo import io
-# import quantities
-# import datetime
-# import argparse
-# 
-# import threading
-# import shutil
-
 import threading
-import NeuroDB.config as config
+import neurodb.config as config
 import argparse
 import neodb.core
 import neodb.config
@@ -62,7 +48,7 @@ def connect_db(user=config.DBUSER, password=config.DBPASSWORD, hostname=config.D
 #### PROJECT ####
 
 def create_project(name, date, description = None, projectcode = None):
-    """create_project(name, description = None, date, projectcode)
+    """create_project(name, date, description = None, projectcode = None)
 
        Creates project in database. Project may contains several individuals.
 
@@ -78,7 +64,7 @@ def create_project(name, date, description = None, projectcode = None):
        
        USE:
        
-        create_project("Project1", "Testing project", "10/10/2014")
+       project = create_project(name="Project1", description="Testing project", date="10/10/2014")
        """
     global NDB
     
@@ -87,9 +73,10 @@ def create_project(name, date, description = None, projectcode = None):
     
     project = neodb.core.Project(name, date, description, projectcode)
     id = project.save(NDB)
+    project.id = id
     
     print "Project created. Id: %s"%id
-    return id
+    return project
 
 def find_project(name = None, date_from = None, date_end = None):
     global NDB
@@ -100,19 +87,19 @@ def find_project(name = None, date_from = None, date_end = None):
     projects =[]
     
     if name != None:
-        projects = neodb.get_id(NDB, 'project', name = name)
+        projects = neodb.dbutils.get_id(NDB, 'project', name = name)
     else:
         if date_from != None and date_end != None:
-            projects = neodb.get_id(NDB, 'project',
+            projects = neodb.dbutils.get_id(NDB, 'project',
                                        date_start = date_from,
                                        date_end = date_end)
         else:
             if date_from != None:
-                projects = neodb.get_id(NDB, 'project',
+                projects = neodb.dbutils.get_id(NDB, 'project',
                                            date_start = date_from)
                 
             elif date_end != None:
-                projects = neodb.get_id(NDB, 'project',
+                projects = neodb.dbutils.get_id(NDB, 'project',
                                            date_end = date_end)
     
     return projects
@@ -273,19 +260,19 @@ def find_individual(name = None, birth_date_from = None, birth_date_end = None):
     individuals =[]
     
     if name != None:
-        individuals = neodb.get_id(NDB, 'individual_vw', name = name)
+        individuals = neodb.dbutils.get_id(NDB, 'individual_vw', name = name)
     else:
         if birth_date_from != None and birth_date_end != None:
-            individuals = neodb.get_id(NDB, 'individual_vw',
+            individuals = neodb.dbutils.get_id(NDB, 'individual_vw',
                                        date_start = birth_date_from,
                                        date_end = birth_date_end)
         else:
             if birth_date_from != None:
-                individuals = neodb.get_id(NDB, 'individual_vw',
+                individuals = neodb.dbutils.get_id(NDB, 'individual_vw',
                                            date_start = birth_date_from)
                 
             elif birth_date_end != None:
-                individuals = neodb.get_id(NDB, 'individual_vw',
+                individuals = neodb.dbutils.get_id(NDB, 'individual_vw',
                                            date_end = birth_date_end)
     
     return individuals
