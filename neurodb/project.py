@@ -4,50 +4,214 @@ Created on Dec 22, 2013
 @author: Sergio Hinojosa Rojas
 '''
 
-import threading
 import neurodb.config as config
-import argparse
 import neodb.core
-import neodb.config
 import datetime
 import neodb.dbutils
 import os
 import quantities
 from neo import io
 import utils
-import threading
-import Queue
-import time
 import re
 import Spike.spike as Spike
 import Spike.sorter as Sorter
 import numpy as np
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
+import db
 
-NDB = None
+class Project(object):
+    '''
+    Project gather all information and registers about a project of experimental in a individual.
+    '''
+    def __init__(self, name = None, date = None, description = None, index = None):
+        '''
+        name : name of project (25 characters max.)
+        date : date of start project. Format dd-mm-yyyy or dd/mm/yyy.
+        description: aditional information (150 characters max.)
+        index: number of internal reference.
+        
+        use:
+        project = neodb.core.Project("project1", "19-05-2014", "Cognital analisys")
+        '''
+        self.id = None
+        self.index = index
+        self.name = name
+        self.description = description
+        
+        if date:
+            self.date = neodb.dbutils.get_ppgdate(date)
+        else:
+            self.date = date
+        
+        if db.NDB == None:
+            db.connect()
+            
+        self.connection = db.NDB
 
-def connect_db(user=config.DBUSER, password=config.DBPASSWORD, hostname=config.DBHOSTNAME, dbname=config.DBNAME):
-    """connect_db(user=config.DBUSER, password=config.DBPASSWORD, hostname=config.DBHOSTNAME, dbname=config.DBNAME)
-       
-       Create connection NDB that establishes a real DBAPI connection to the database.
-       Neurodb uses a database schema create by NeoDB
-       
-       Return
-       Function returns object SQLAlchemy Connection
-       """
-    global NDB
-    try:
-        NDB = neodb.config.dbconnect(dbname, user, password, hostname)
-    except argparse.ArgumentError:
-        pass
+    def save(self):
+        '''
+        Save Project into database trough connection. 'connection" is a Psycopg2 connection. You can get
+        connection using neodb.connectdb().
+        '''
+        if self.name == None:
+            raise StandardError("Project must have a name.")
+        
+        other = neodb.dbutils.get_id(self.connection, 'project', name = self.name)
+        
+        if other != []:
+            raise StandardError("There is another project with name '%s'."%self.name)
+        
+        cursor = self.connection.cursor()
+        query = """INSERT INTO project (name, date, description, index)
+                   VALUES (%s, %s, %s, %s)"""
+        cursor.execute(query,[self.name, self.date, self.description, self.index])
+        self.connection.commit()
+        
+        [(id, _)] = neodb.dbutils.get_id(self.connection, 'project', name = self.name)
+        
+        return id
     
-    return NDB
+    def get_from_db(self, id):
+        cursor = self.connection.cursor()
+        query = """ SELECT * FROM project WHERE id = %s"""
+        cursor.execute(query, [id])
+        results = cursor.fetchall()
+        
+        if results != []:
+            self.name =          results[0][2]
+            self.description =   results[0][3]
+            self.date =   results[0][4]
+            self.id = results[0][0]
+        
+            results = {}
+            results['name'] = self.name
+            results['description'] = self.description
+            results['date'] = self.date
+            
+            return results
+        else:
+            print "There are not a Project with id = %s"%id
+            return None
+    
+    def ls_sessions(self):
+        sessions = neodb.dbutils.get_id(db.NDB, 'block', id_project=self.id)
+        for i in sessions:
+            print "id:%s, name:%s"%(i[0],i[1])
+        return sessions
+        
+        
+        pass
 
+    def add_session(self, id_individual, date, name, session_path,
+                    description = None, sample_rate = 14400, dtype = 'i2', 
+                    unit = 'mv', scale_factor = 1, nchannels = 25):
+        """
+        add_session(id_project, id_individual, date, name, session_path,
+                    description = None, sample_rate = 14400, dtype = 'i2', 
+                    unit = 'mv', scale_factor = 1)
+        
+        Saves the records of a session.
+        
+        Parameters:
+        id_project (mandatory)
+        id_individual (mandatory)
+        date (mandatory)
+        name (mandatory)
+        session_path (mandatory)
+        description
+        sample_rate
+        dtype
+        unit
+        scale_factor
+        """
+        #TODO: implement "scale factor" as the factor that adjusts the measured value 
+        # for an electric interpretation with unit.
+        # Add nchannel parameter to create a recordingchannels objects that gatter the
+        # segments of analogsignals
+        
+        if type(date) == str:
+            date = neodb.dbutils.get_datetimedate(date)
+        elif type(date) != datetime.date:
+            raise StandardError("Invalid date type. It must be 'datetime.date' or " + 
+                                 "string with format 'dd-mm-yyyy' or 'dd/mm/yyyy'")
+        
+        if not os.path.isdir(session_path):
+            raise StandardError("Invalid path.")
+        
+        # create Session Block
+        session = neodb.core.BlockDB(id_project = self.id_project,
+                                     id_individual = id_individual, name = name, 
+                                     rec_datetime = date, description = description)
+        
+        id_session = session.save(self.connection)
+        
+        carpeta = session_path
+        archivos = []
+        for nombre in os.listdir(carpeta):
+            match = re.match('(^(.*)-(\d+)-(\d+)$)', nombre)
+            if match:
+                direccion = os.path.join(carpeta, nombre)
+                if os.path.isfile(direccion):  # solo archivos
+                    ndate = match.groups()[1]
+                    index = int(match.groups()[3])
+                    archivos.append((index, os.path.getmtime(direccion), nombre, direccion))
+                    
+        archivos.sort()
+        
+        # Create recordingchannels
+        rchannels = []  
+        for n in range(nchannels):
+            rc = neodb.core.RecordingChannelDB(id_block = id_session, index = n)
+            id_rc = rc.save(db.NDB)
+            rchannels.append((n, id_rc))
+        
+        # Create segments
+        tstart = 0.0
+        tlength = 0.0
+        
+        for nindex, _, name, segmentfile_path in archivos:
+            segmentdb = neodb.core.SegmentDB(id_session, name, file_origin = segmentfile_path)
+            id_segment = segmentdb.save(db.NDB)
+            
+            segment = io.RawBinarySignalIO(filename = segmentfile_path).read_segment(sampling_rate = sample_rate,          
+                                                                                 dtype = dtype,
+                                                                                 nbchannel=nchannels, 
+                                                                                 rangemin = -16380, 
+                                                                                 rangemax = 16380)
+            
+            cindex = 0
+            
+            # Save analogsignals
+            for channel in segment.analogsignals:
+                analogsignaldb = neodb.core.AnalogSignalDB(id_segment = id_segment,
+                                                           id_recordingchannel =  rchannels[cindex][1],
+                                                           name = name, 
+                                                           signal = channel.tolist(), 
+                                                           channel_index = rchannels[cindex][0],
+                                                           units = utils.get_quantitie(unit),
+                                                           file_origin = segmentfile_path,
+                                                           sampling_rate = sample_rate*quantities.Hz,
+                                                           t_start = tstart,
+                                                           index = nindex)
+                analogsignaldb.save(self.connection)
+                cindex = cindex + 1
+            
+            tlength = len(channel)/sample_rate
+            tstart = tstart + tlength
 
-#### PROJECT ####
+def ls():
+    if db.NDB == None:
+        db.connect()
+    
+    projects = neodb.dbutils.get_id(db.NDB, 'project')
+    if projects != []:
+        for i in projects:
+            print "id:%s name:%s"%(i[0], i[1])
+    else:
+        print "There are not projects."
 
-def create_project(name, date, description = None, projectcode = None):
+def create(name, date, description = None, projectcode = None):
     """create_project(name, date, description = None, projectcode = None)
 
        Creates project in database. Project may contains several individuals.
@@ -66,226 +230,58 @@ def create_project(name, date, description = None, projectcode = None):
        
        project = create_project(name="Project1", description="Testing project", date="10/10/2014")
        """
-    global NDB
+    if db.NDB == None:
+        db.connect()
     
-    if NDB == None:
-        connect_db()
-    
-    project = neodb.core.Project(name, date, description, projectcode)
-    id = project.save(NDB)
+    project = Project(name, date, description, projectcode)
+    id = project.save(db.NDB)
     project.id = id
     
     print "Project created. Id: %s"%id
     return project
 
-def find_project(name = None, date_from = None, date_end = None):
-    global NDB
-    
-    if NDB == None:
-        connect_db()
+def find(name = None, date_from = None, date_end = None):
+    if db.NDB == None:
+        db.connect()
     
     projects =[]
     
     if name != None:
-        projects = neodb.dbutils.get_id(NDB, 'project', name = name)
+        projects = neodb.dbutils.get_id(db.NDB, 'project', name = name)
     else:
         if date_from != None and date_end != None:
-            projects = neodb.dbutils.get_id(NDB, 'project',
+            projects = neodb.dbutils.get_id(db.NDB, 'project',
                                        date_start = date_from,
                                        date_end = date_end)
         else:
             if date_from != None:
-                projects = neodb.dbutils.get_id(NDB, 'project',
+                projects = neodb.dbutils.get_id(db.NDB, 'project',
                                            date_start = date_from)
                 
             elif date_end != None:
-                projects = neodb.dbutils.get_id(NDB, 'project',
+                projects = neodb.dbutils.get_id(db.NDB, 'project',
                                            date_end = date_end)
     
     return projects
 
-def get_project(id):
-    global NDB
+def get_from_db(id):
+    """
+    get_from_db(id)
     
-    if NDB == None:
-        connect_db()
+    id: id of project (Mandatory)
     
-    project = neodb.core.Project().get_from_db(NDB, id)
+    Return a Project object from database.
+    
+    Example:
+    import neurodb
+    project = neurodb.project.get_from_db(id=17)
+    
+    """    
+    project = Project()
+    project.get_from_db(id)
     
     return project
 
-
-#### INDIVIDUAL #####
-
-
-def add_session(id_project, id_individual, date, name, session_path,
-                description = None, sample_rate = 14400, dtype = 'i2', 
-                unit = 'mv', scale_factor = 1, nchannels = 25):
-    """
-    add_session(id_project, id_individual, date, name, session_path,
-                description = None, sample_rate = 14400, dtype = 'i2', 
-                unit = 'mv', scale_factor = 1)
-    
-    Saves the records of a session.
-    
-    Parameters:
-    id_project (mandatory)
-    id_individual (mandatory)
-    date (mandatory)
-    name (mandatory)
-    session_path (mandatory)
-    description
-    sample_rate
-    dtype
-    unit
-    scale_factor
-    """
-    #TODO: implement "scale factor" as the factor that adjusts the measured value 
-    # for an electric interpretation with unit.
-    # Add nchannel parameter to create a recordingchannels objects that gatter the
-    # segments of analogsignals
-    
-    global NDB
-    
-    if NDB == None:
-        connect_db()
-        
-    if type(date) == str:
-        date = neodb.dbutils.get_datetimedate(date)
-    elif type(date) != datetime.date:
-        raise StandardError("Invalid date type. It must be 'datetime.date' or " + 
-                             "string with format 'dd-mm-yyyy' or 'dd/mm/yyyy'")
-    
-    if not os.path.isdir(session_path):
-        raise StandardError("Invalid path.")
-    
-    # create Session Block
-    session = neodb.core.BlockDB(id_project = id_project,
-                                 id_individual = id_individual, name = name, 
-                                 rec_datetime = date, description = description)
-    
-    id_session = session.save(NDB)
-    
-    # sort files of session
-#     carpeta = session_path
-#     archivos = []
-#     for nombre in os.listdir(carpeta):
-#         direccion = os.path.join(carpeta, nombre)
-#         if os.path.isfile(direccion):  # solo archivos
-#             archivos.append((os.path.getmtime(direccion), nombre, direccion))
-    
-    
-    carpeta = session_path
-    archivos = []
-    for nombre in os.listdir(carpeta):
-        match = re.match('(^(.*)-(\d+)-(\d+)$)', nombre)
-        if match:
-            direccion = os.path.join(carpeta, nombre)
-            if os.path.isfile(direccion):  # solo archivos
-                ndate = match.groups()[1]
-                index = int(match.groups()[3])
-                archivos.append((index, os.path.getmtime(direccion), nombre, direccion))
-                
-    archivos.sort()
-    
-    # Create recordingchannels
-    rchannels = []  
-    for n in range(nchannels):
-        rc = neodb.core.RecordingChannelDB(id_block = id_session, index = n)
-        id_rc = rc.save(NDB)
-        rchannels.append((n, id_rc))
-    
-    # Create segments
-    tstart = 0.0
-    tlength = 0.0
-    
-    for nindex, _, name, segmentfile_path in archivos:
-        segmentdb = neodb.core.SegmentDB(id_session, name, file_origin = segmentfile_path)
-        id_segment = segmentdb.save(NDB)
-        
-        segment = io.RawBinarySignalIO(filename = segmentfile_path).read_segment(sampling_rate = sample_rate,          
-                                                                             dtype = dtype,
-                                                                             nbchannel=nchannels, 
-                                                                             rangemin = -16380, 
-                                                                             rangemax = 16380)
-        
-        cindex = 0
-        
-        # Save analogsignals
-        for channel in segment.analogsignals:
-            analogsignaldb = neodb.core.AnalogSignalDB(id_segment = id_segment,
-                                                       id_recordingchannel =  rchannels[cindex][1],
-                                                       name = name, 
-                                                       signal = channel.tolist(), 
-                                                       channel_index = rchannels[cindex][0],
-                                                       units = utils.get_quantitie(unit),
-                                                       file_origin = segmentfile_path,
-                                                       sampling_rate = sample_rate*quantities.Hz,
-                                                       t_start = tstart,
-                                                       index = nindex)
-            analogsignaldb.save(NDB)
-            cindex = cindex + 1
-        
-        tlength = len(channel)/sample_rate
-        tstart = tstart + tlength
-
-def create_individual(name, description, birth_date, picture_path):
-    """
-    create_individual(name, description, birth_date, picture_path)
-    
-    Creates a individual in DB.
-    
-    USE:
-    
-    create_individual("Bolt", "Raton albino macho", "10/10/2013", "/home/user/pictures/bolt.jpg")
-    
-    """
-    global NDB
-    
-    if NDB == None:
-        connect_db()
-    
-    individual = neodb.core.Individual(name, description, birth_date, picture_path)
-    id = individual.save(NDB)
-    
-    print "Individual created. Id: %s"%id
-    return id
-
-def find_individual(name = None, birth_date_from = None, birth_date_end = None):
-    global NDB
-    
-    if NDB == None:
-        connect_db()
-    
-    individuals =[]
-    
-    if name != None:
-        individuals = neodb.dbutils.get_id(NDB, 'individual_vw', name = name)
-    else:
-        if birth_date_from != None and birth_date_end != None:
-            individuals = neodb.dbutils.get_id(NDB, 'individual_vw',
-                                       date_start = birth_date_from,
-                                       date_end = birth_date_end)
-        else:
-            if birth_date_from != None:
-                individuals = neodb.dbutils.get_id(NDB, 'individual_vw',
-                                           date_start = birth_date_from)
-                
-            elif birth_date_end != None:
-                individuals = neodb.dbutils.get_id(NDB, 'individual_vw',
-                                           date_end = birth_date_end)
-    
-    return individuals
-
-def get_individual(id):
-    global NDB
-    
-    if NDB == None:
-        connect_db()
-    
-    individual = neodb.core.Individual().get_from_db(NDB, id)
-    
-    return individual
 
 def save_channel_spikes(id_block, channel):
     """
@@ -309,12 +305,10 @@ def save_channel_spikes(id_block, channel):
     
     
     """
-    global NDB
+    if db.NDB == None:
+        db.connect()
     
-    if NDB == None:
-        connect_db()
-    
-    ansig = neodb.core.analogsignaldb.get_from_db3(NDB, 
+    ansig = neodb.core.analogsignaldb.get_from_db3(db.NDB, 
                                                    recordingchannel = channel, 
                                                    id_block = id_block)
     
@@ -324,7 +318,7 @@ def save_channel_spikes(id_block, channel):
         
         for i in range(len(spikes)):
             t_spike = index[i]/float(ansig.sampling_rate)
-            segment = neodb.core.analogsignaldb.get_from_db3(NDB, 
+            segment = neodb.core.analogsignaldb.get_from_db3(db.NDB, 
                                                    recordingchannel = channel, 
                                                    id_block = id_block,
                                                    t_start = t_spike)
@@ -335,7 +329,7 @@ def save_channel_spikes(id_block, channel):
                                        time = t_spike,
                                        index = index[i],
                                        sampling_rate = segment.sampling_rate)
-            id_spike = spike.save(NDB)
+            id_spike = spike.save(db.NDB)
             
     #TODO: returns of the function neurodb.save_channel_spikes
 
@@ -349,26 +343,22 @@ def get_clusters(id_block, channel, method, save=None):
         sorter = Sorter.DPSorter(dbname, hostname, user, password)
         
     if method == 'paramagnetic':
-        global NDB
-    
-        if NDB == None:
-            connect_db()
+        if db.NDB == None:
+            db.connect()
         
-        sorter = Sorter.PMGSorter(NDB)
+        sorter = Sorter.PMGSorter(db.NDB)
         
     clusters = sorter.get_clusters_fromdb(id_block, channel)
     
     if save == True:
-        neodb.core.cluster.save(NDB, id_block, channel, clusters)   
+        neodb.core.cluster.save(db.NDB, id_block, channel, clusters)   
     
     return clusters
 
 
 def draw_clusters(clusters, path = None):
-    global NDB
-
-    if NDB == None:
-        connect_db()
+    if db.NDB == None:
+        db.connect()
     
     ncluster = len(clusters)
     
@@ -377,7 +367,7 @@ def draw_clusters(clusters, path = None):
         k = 0
         
         for id_spike in clusters[i]:
-            spike = neodb.core.spikedb.get_from_db(NDB, id_block = 54, channel = 3, id = int(id_spike))
+            spike = neodb.core.spikedb.get_from_db(db.NDB, id_block = 54, channel = 3, id = int(id_spike))
             plt.plot(spike[0].waveform)
             k = k+1
         title = str(i) + ": " + str(k)
@@ -392,12 +382,11 @@ def draw_clusters(clusters, path = None):
 
 def update_spike_coordenates(id_block, channel):
     #TODO: Create p1, p2 y p3 columns
-    global NDB
     from sklearn.preprocessing import normalize
-    if NDB == None:
-        connect_db()
+    if db.NDB == None:
+        db.connect()
         
-    spikes = neodb.core.spikedb.get_from_db(NDB, id_block, channel)
+    spikes = neodb.core.spikedb.get_from_db(db.NDB, id_block, channel)
     mspikes = []
     
     for spike in spikes:
@@ -410,12 +399,12 @@ def update_spike_coordenates(id_block, channel):
     
     #transf = Sorter.wave_features(mspikes, 10)
     
-    spikes_id = neodb.core.spikedb.get_ids_from_db(NDB, id_block, channel)
+    spikes_id = neodb.core.spikedb.get_ids_from_db(db.NDB, id_block, channel)
     
     i = 0
     for p in transf:
         id = spikes_id[i]
-        neodb.core.spikedb.update(NDB, id = id, p1 = p[0], p2 = p[1], p3 = p[2], p4 = p[3], p5 = p[4], p6 = p[5], p7 = p[6], p8 = p[7], p9 = p[8], p10 = p[9])
+        neodb.core.spikedb.update(db.NDB, id = id, p1 = p[0], p2 = p[1], p3 = p[2], p4 = p[3], p5 = p[4], p6 = p[5], p7 = p[6], p8 = p[7], p9 = p[8], p10 = p[9])
         i = i+1
     
 
@@ -433,8 +422,12 @@ def update_spike_coordenates(id_block, channel):
 #     ndb.commit()    
 
 if __name__ == '__main__':
-    ndb = connect_db()
+    ndb = db.connect()
     cursor = ndb.cursor()
+    
+    p = get_from_db(id = 17)
+    p.ls_sessions()
+    
     #neodb.config_server('192.168.2.2', "oss", "ohm", "demo", "postgres", "postgres")
     #create_project("Project1", "Testing project", "10/10/2014")
     #image = "/home/sergio/iibm/workspace2/NeuroDB/test/feliz.jpg"
@@ -450,7 +443,7 @@ if __name__ == '__main__':
     #last_file('/home/sergio/iibm/sandbox')
 
     #save_channel_spikes(54, 3)
-    update_spike_coordenates(54, 3)
+    #update_spike_coordenates(54, 3)
     
     #clusters = get_clusters(54, 3, 'paramagnetic', save=True)
     #clusters = get_clusters('54', '3', 'dp', save=True)

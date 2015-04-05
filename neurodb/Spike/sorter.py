@@ -15,7 +15,7 @@ import ctypes
 import numpy.ctypeslib as npct
 import matplotlib.pyplot as plt
 import psycopg2
-from .. import neodb
+import neurodb.neodb as neodb
 
 #TODO: approach use a classes to define the sorter. Change the approach to simples functions
 
@@ -529,18 +529,31 @@ class PMGSorter(ParamagneticSorter):
 class DPSorter():
     
     def __init__(self, dbname, host, user, password):
-        self.connect = "dbname=%s host=%s user=%s password=%s"%(dbname, host, user, password) #TODO Harcode
+        array_1d_double = npct.ndpointer(dtype=np.double, ndim=1, flags='CONTIGUOUS')
         
-        self.array_1d_double = npct.ndpointer(dtype=np.double, ndim=1, flags='CONTIGUOUS')
-        self.array_1d_int = npct.ndpointer(dtype=np.int64, ndim=1, flags='CONTIGUOUS')
-        self.array_2d_double = npct.ndpointer(dtype=np.double, ndim=2, flags='CONTIGUOUS')
-        #TODO path harcode
-        self.libcd = npct.load_library("cfsfdp", "/home/sergio/iibm/workspace/NeuroDB/NeuroDB/cfunctions/cfsfdp")
-
-    def __get_n_dbspikes(self, id_block, channel):
+        self.libcd = npct.load_library("cfsfdp", "/home/sergio/Proyectos/NeuroDB/NeuroDB/neurodb/cfunctions/cfsfdp")
+        
+        self.libcd.get_dc.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_float, ctypes.c_int]
+        self.libcd.get_dc.restype = ctypes.c_float
+        
+        self.libcd.cluster_dp.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, array_1d_double, array_1d_double, array_1d_double, array_1d_double, array_1d_double, ctypes.c_float, ctypes.c_int, ctypes.c_char_p]
+        self.libcd.cluster_dp.restype = ctypes.c_int
+        
         self.libcd.get_n_dbspikes.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p]
         self.libcd.get_n_dbspikes.restype = ctypes.c_int
         
+        self.libcd.get_clusters.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, array_1d_double, array_1d_double, array_1d_double, array_1d_double, ctypes.c_int, ctypes.c_float]
+        self.libcd.get_clusters.restype = ctypes.c_int
+        
+        self.libcd.get_n_dbspikes.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p]
+        self.libcd.get_n_dbspikes.restype = ctypes.c_int
+        
+        self.connect = "dbname=%s host=%s user=%s password=%s"%(dbname, host, user, password) #TODO Harcode
+        
+        #TODO path harcode
+        self.libcd = npct.load_library("cfsfdp", "/home/sergio/iibm/workspace/NeuroDB/NeuroDB/cfunctions/cfsfdp")
+
+    def __get_n_dbspikes(self, id_block, channel):        
         nspikes = self.libcd.get_n_dbspikes(self.connect, id_block, channel)
         
         return np.int(nspikes)
