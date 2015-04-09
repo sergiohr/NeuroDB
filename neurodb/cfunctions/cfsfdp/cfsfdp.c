@@ -9,6 +9,53 @@
 
 //TODO Returns array. Now all arrays are defined in python a passed it by parameters.
 
+void least_squares(double *x,double *y,int n, double *m, double *b, double *sd)
+{
+    double k=0,t=0,w=0,k2=0;
+    int i;
+    double *x1 = x;
+    double *y1 = y;
+    double sumerr = 0;
+    //Efectuando las respectivas sumas y productos requeridos en la ecuacion
+    for(i=0; i<n; i++,x1++,y1++)
+    {
+        k+=*x1;
+        t+=*y1;
+        w+= (*x1)*(*y1);
+        k2+=(*x1)*(*x1);
+    }
+    //Resolviendo la ecuacion de la Pendiente ajustada a minimos cuadrados
+    *m=(n*w-k*t)/(n*k2-k*k);
+
+    k=0,t=0,w=0,k2=0;
+    x1 = x;
+    y1 = y;
+    //Efectuando las respectivas sumas y productos requeridos en la ecuacion
+    for(i=0; i<n; i++,x1++,y1++)
+    {
+        k+=*x1;
+        t+=*y1;
+        w+= (*x1)*(*y1);
+        k2+=(*x1)*(*x1);
+    }
+//Resolviendo la ecuacion para hallar el punto de corte por minimos cuadrados
+    *b=(t*k2-k*w)/(n*k2-k*k);
+
+    y1 = y;
+    x1 = x;
+    for(i=0; i<n; i++,x1++,y1++)
+    {
+        sumerr = sumerr + pow(*y1 - (*m*(*x1)+*b), 2);
+    }
+
+    *sd = sqrt(sumerr / (float)n);
+
+    printf("m=%lf\n",*m);
+    printf("b=%lf\n",*b);
+    printf("sd=%lf\n",*sd);
+}
+
+
 int compare(const void *_a, const void *_b) {
     int *a, *b;
 
@@ -356,8 +403,8 @@ int get_clusters(char connect[], char id_block[], char channel[], double* rho, d
     PGresult        *res;
 
     float **distances;
-    int rec_count, i, j, k;
-    double rho_average, mdist;
+    int rec_count, i, j;
+    double rho_average;
     char query[250];
     float value;
 
