@@ -1,5 +1,5 @@
 //compiling with : gcc -fPIC -o cfsfdp.so -shared cfsfdp.c -I/usr/include/pgsql -L/usr/lib/postgresql92/lib64 -lpq
-// Versión previa a unir todas las funciones en una que es cluster_dp
+
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,12 +49,7 @@ void least_squares(double *x,double *y,int n, double *m, double *b, double *sd)
     }
 
     *sd = sqrt(sumerr / (float)n);
-
-    printf("m=%lf\n",*m);
-    printf("b=%lf\n",*b);
-    printf("sd=%lf\n",*sd);
 }
-
 
 int compare(const void *_a, const void *_b) {
     int *a, *b;
@@ -74,9 +69,9 @@ int pivot(double *array, double *index, int left, int right)
     double aux2;
 
     pivote = left;
-    pivot_value = index[pivote];
+    pivot_value = array[pivote];
     for (i=left+1; i<=right; i++){
-        if (index[i] < pivot_value){
+        if (array[i] > pivot_value){
                 pivote++;
                 aux=array[i];
                 aux2=index[i];
@@ -347,22 +342,136 @@ int get_distance_to_higher_density(float** distances, int rec_count, double* rho
     return 0;
 }
 
-int cluster_dp(char connect[], char id_block[], char channel[], double* rho, double *delta, double* id_spike, double* index_cluster, double* nneigh, float dc, int n, char kernel[20])
+double maxvector(double* rho, int n)
+{
+    int i;
+    double max = rho[0];
+    for(i=1; i<n; i++)
+    {
+        if (max<rho[i]) max=rho[i];
+    }
+
+    return max;
+}
+
+double* cp_vector(double* vector, int n)
+{
+    int i;
+    double* copy = (double*)calloc(n,sizeof(double));
+    for(i=0; i<n; i++)
+    {
+        copy[i] = vector[i];
+    }
+
+    return copy;
+}
+
+void get_centers(double* rho, double *delta, double* centers, int rec_count)
+{
+    double *deltacp;
+    double max;
+    double m, b, sd;
+    double *ajuste;
+    int i;
+
+    //eliminate firsts deltas, because it are a isolate centers
+    deltacp = cp_vector(delta, rec_count);
+    max = maxvector(rho, rec_count);
+    max = max*0.06;
+
+    for(i=0; i<rec_count; i++)
+    {
+        if (rho[i] < max)
+            deltacp[i] = 0;
+    }
+
+    //least squares over deltacp and the centers are points over sd+least square
+    // least_square y=m*x+b
+    least_squares(rho, deltacp, rec_count, &m, &b, &sd);
+
+    ajuste = (double*)calloc(rec_count, sizeof(double));
+    for(i=0; i<rec_count; i++)
+        ajuste[i] = m*rho[i] + b;
+
+    for(i=0; i<rec_count; i++)
+    {
+        if(deltacp[i] > ajuste[i] + 1.7*sd)
+        {
+            centers[0]++;
+            centers[(int)centers[0]] = i;
+        }
+    }
+    free(deltacp);
+    free(ajuste);
+}
+
+int cluster_dp(char connect[], char id_block[], char channel[], double* rho, double *delta, double* id_spike, double* cluster_index, double* nneigh, double* centers, float dc, int points, char kernel[20])
 {
     float **distances;
     int rec_count;
-    int i;
+    int i, j;
+    double* ordrho;
+    double* ordrho_index;
+    double* bord_rho;
+    double rho_average;
 
-    distances = get_distances(connect, id_block, channel, n, &rec_count);
+    distances = get_distances(connect, id_block, channel, points, &rec_count);
 
     get_local_density(distances, rec_count, dc, rho, kernel);
     get_distance_to_higher_density(distances, rec_count, rho, delta, nneigh);
+
+    get_centers(rho, delta, centers, rec_count);
+
+    ordrho_index = (double*)calloc(rec_count, sizeof(double));
+    for(i=0; i<rec_count; i++)
+    {
+        cluster_index[i] = -1;
+        ordrho_index[i] = i;
+    }
+
+    for(i=1; i<centers[0]+1; i++)
+    {
+        cluster_index[(int)centers[i]] = i;
+    }
+
+    ordrho = cp_vector(rho, rec_count);
+    Quicksort(ordrho, ordrho_index, 0, rec_count-1);
+
+    for(i=0; i<rec_count; i++)
+    {
+        if (cluster_index[(int)ordrho_index[i]] == -1)
+            cluster_index[(int)ordrho_index[i]] = cluster_index[(int)nneigh[(int)ordrho_index[i]]];
+    }
+
+    bord_rho = (double*)calloc((int)centers[0]+1,sizeof(double));
+    if (centers[0]>1)
+    {
+        for(i=0; i<rec_count-1; i++)
+        {
+            for(j=i+1; j<rec_count; j++)
+            {
+                if ((cluster_index[i]!=cluster_index[j]) && (distances[i][j] <= dc))
+                {
+                    rho_average = (rho[i]+rho[j])/2.0;
+                    if (rho_average > bord_rho[(int)cluster_index[i]])
+                        bord_rho[(int)cluster_index[i]] = rho_average;
+                    if (rho_average > bord_rho[(int)cluster_index[j]])
+                        bord_rho[(int)cluster_index[j]] = rho_average;
+                }
+            }
+        }
+        for(i=0; i<rec_count; i++)
+        {
+            if (rho[i] < bord_rho[(int)cluster_index[i]])
+                cluster_index[i] = 0;
+        }
+    }
 
     for (i = 0; i < rec_count; i++) {
         free(distances[i]);
     }
     free(distances);
-
+    free(ordrho_index);
     return 0;
 }
 
@@ -397,20 +506,14 @@ int get_n_dbspikes(char connect[], char id_block[], char channel[])
 }
 
 
-int get_clusters(char connect[], char id_block[], char channel[], double* rho, double* centers, double* spikes_id, double* cluster_index, int points, float dc)
+int get_clusters(char connect[], char id_block[], char channel[], double* spikes_id)
 {
     PGconn          *conn;
     PGresult        *res;
 
-    float **distances;
-    int rec_count, i, j;
-    double rho_average;
+    int rec_count, i;
     char query[250];
     float value;
-
-    double* bord_rho = (double*)calloc((int)centers[0]+1,sizeof(double));
-
-    distances = get_distances(connect, id_block, channel, points, &rec_count);
 
     conn = PQconnectdb(connect);
     strcpy(query, "SELECT spike.id from SPIKE ");
@@ -421,41 +524,13 @@ int get_clusters(char connect[], char id_block[], char channel[], double* rho, d
     strcat(query, " AND recordingchannel.index = ");
     strcat(query, channel);
     res = PQexec(conn,query);
-
-    if (centers[0]>1)
-    {
-        for(i=0; i<rec_count-1; i++)
-        {
-            for(j=i+1; j<rec_count; j++)
-            {
-                //printf("dist: %lf, dc: %f\n", distances[i][j], dc);
-                if ((cluster_index[i]!=cluster_index[j]) && (distances[i][j] <= dc))
-                {
-                    rho_average = (rho[i]+rho[j])/2.0;
-                    if (rho_average > bord_rho[(int)cluster_index[i]])
-                        bord_rho[(int)cluster_index[i]] = rho_average;
-                    if (rho_average > bord_rho[(int)cluster_index[j]])
-                        bord_rho[(int)cluster_index[j]] = rho_average;
-                }
-            }
-        }
-        for(i=0; i<rec_count; i++)
-        {
-            if (rho[i] < bord_rho[(int)cluster_index[i]])
-                cluster_index[i] = 0;
-        }
-    }
+    rec_count = PQntuples(res);
 
     for (i = 0; i < rec_count; i++) {
         sscanf(PQgetvalue(res, i, 0),"%f",&value);
         spikes_id[i] = value;
     }
 
-    for (i = 0; i < rec_count; i++) {
-        free(distances[i]);
-    }
-    free(distances);
-    free(bord_rho);
     PQclear(res);
     PQfinish(conn);
     return 0;
@@ -467,16 +542,17 @@ int main(int argc, char* argv[])
     char connect[100] = "dbname=demo host=172.16.162.128 user=postgres password=postgres";
     double* local_density = (double*)calloc(1026,sizeof(double));
     double* distance_to_higher_density = (double*)calloc(1026,sizeof(double));
+    double* nneigh = (double*)calloc(1026,sizeof(double));
     //double* gamma = (double*)calloc(1026,sizeof(double));
-    double* centers = (double*)calloc(3,sizeof(double));
+    double* centers = (double*)calloc(5,sizeof(double));
     //double* cluster = (double*)calloc(1026,sizeof(double));
     double** clusters = (double**)malloc(sizeof(double*)*2);
     clusters[0] = (double*)calloc(1026,sizeof(double));
     clusters[1] = (double*)calloc(1026,sizeof(double));
 //
-    float dc = get_dc(connect, "57", "24", 2.0, 3);
+    float dc = get_dc(connect, "57", "20", 1.8, 3);
 
-    //cluster_dp(connect, "54", "3", local_density, distance_to_higher_density, clusters[0], clusters[1], dc, 10, "gaussian");
+    cluster_dp(connect, "57", "20", local_density, distance_to_higher_density, clusters[0], clusters[1], nneigh, centers, dc, 10, "gaussian");
 //
 //    get_distance_to_higher_density3("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54", "3", local_density, distance_to_higher_density);
 //
@@ -487,10 +563,11 @@ int main(int argc, char* argv[])
 //    clusters = get_cluster_dp("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54", centers);
 
     //get_cluster_dp2("dbname=demo host=192.168.2.2 user=postgres password=postgres", "54", "3", clusters[0], clusters[1], dc);
-
-    centers[0]=1;
-    centers[1]=363;
     //get_clusters(connect, "54", "3", centers, clusters[0], clusters[1], 3, dc);
+
+    //double a[] = {9, 3, 1, 4, 2, 0, 5, 7, 6, 8};
+    //double b[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    //Quicksort(a, b, 0, 9);
 
     free(clusters[0]);
     free(clusters[1]);
@@ -498,6 +575,6 @@ int main(int argc, char* argv[])
     free(clusters);
     free(local_density);
     free(distance_to_higher_density);
-
+    free(nneigh);
     return 1;
 }
