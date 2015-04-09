@@ -1,5 +1,5 @@
 //compiling with : gcc -fPIC -o cfsfdp.so -shared cfsfdp.c -I/usr/include/pgsql -L/usr/lib/postgresql92/lib64 -lpq
-
+// Versión previa a unir todas las funciones en una que es cluster_dp
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
