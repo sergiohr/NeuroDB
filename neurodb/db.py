@@ -12,7 +12,7 @@ import argparse
 
 NDB = None
 
-def connect(user=config.DBUSER, password=config.DBPASSWORD, hostname=config.DBHOSTNAME, dbname=config.DBNAME):
+def connect(user=None, password=None, hostname=None, dbname=None):
     """connect_db(user=config.DBUSER, password=config.DBPASSWORD, hostname=config.DBHOSTNAME, dbname=config.DBNAME)
        
        Create connection NDB that establishes a real DBAPI connection to the database.

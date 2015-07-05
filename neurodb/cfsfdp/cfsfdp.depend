@@ -1,0 +1,9 @@
+# depslib dependency file v1.0
+1434426918 source:/home/sergio/Proyectos/NeuroDB/NeuroDB/neurodb/cfsfdp/cfsfdp.c
+	<stdio.h>
+	<stdlib.h>
+	<string.h>
+	<libpq-fe.h>
+	<math.h>
+	<ctype.h>
+

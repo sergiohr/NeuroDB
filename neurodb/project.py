@@ -4,6 +4,8 @@ Created on Dec 22, 2013
 @author: Sergio Hinojosa Rojas
 '''
 
+import neurodb
+import neurodb.neodb
 import neurodb.config as config
 import neodb.core
 import datetime
@@ -19,6 +21,8 @@ import numpy as np
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import db
+import scipy.io
+
 
 class Project(object):
     '''
@@ -105,7 +109,7 @@ class Project(object):
 
     def add_session(self, id_individual, date, name, session_path,
                     description = None, sample_rate = 14400, dtype = 'i2', 
-                    unit = 'mv', scale_factor = 1, nchannels = 25):
+                    unit = 'mv', scale_factor = 1, nchannels = 25, mode = None):
         """
         add_session(id_project, id_individual, date, name, session_path,
                     description = None, sample_rate = 14400, dtype = 'i2', 
@@ -136,69 +140,111 @@ class Project(object):
             raise StandardError("Invalid date type. It must be 'datetime.date' or " + 
                                  "string with format 'dd-mm-yyyy' or 'dd/mm/yyyy'")
         
-        if not os.path.isdir(session_path):
-            raise StandardError("Invalid path.")
+        if mode == 'Matlab':
+            if not os.path.isfile(session_path):
+                raise StandardError("Invalid file.")
+        else:
+            if not os.path.isdir(session_path):
+                raise StandardError("Invalid path.")
         
         # create Session Block
-        session = neodb.core.BlockDB(id_project = self.id_project,
+        session = neodb.core.BlockDB(id_project = self.id,
                                      id_individual = id_individual, name = name, 
                                      rec_datetime = date, description = description)
         
         id_session = session.save(self.connection)
         
-        carpeta = session_path
-        archivos = []
-        for nombre in os.listdir(carpeta):
-            match = re.match('(^(.*)-(\d+)-(\d+)$)', nombre)
-            if match:
-                direccion = os.path.join(carpeta, nombre)
-                if os.path.isfile(direccion):  # solo archivos
-                    ndate = match.groups()[1]
-                    index = int(match.groups()[3])
-                    archivos.append((index, os.path.getmtime(direccion), nombre, direccion))
-                    
-        archivos.sort()
+        if mode == None:
+            carpeta = session_path
+            archivos = []
+            for nombre in os.listdir(carpeta):
+                match = re.match('(^(.*)-(\d+)-(\d+)$)', nombre)
+                if match:
+                    direccion = os.path.join(carpeta, nombre)
+                    if os.path.isfile(direccion):  # solo archivos
+                        ndate = match.groups()[1]
+                        index = int(match.groups()[3])
+                        archivos.append((index, os.path.getmtime(direccion), nombre, direccion))
+                        
+            archivos.sort()
+            
+            # Create recordingchannels
+            rchannels = []  
+            for n in range(nchannels):
+                rc = neodb.core.RecordingChannelDB(id_block = id_session, index = n)
+                id_rc = rc.save(db.NDB)
+                rchannels.append((n, id_rc))
+            
+            # Create segments
+            tstart = 0.0
+            tlength = 0.0
+            
+            for nindex, _, name, segmentfile_path in archivos:
+                segmentdb = neodb.core.SegmentDB(id_session, name, file_origin = segmentfile_path)
+                id_segment = segmentdb.save(db.NDB)
+                
+                segment = io.RawBinarySignalIO(filename = segmentfile_path).read_segment(sampling_rate = sample_rate,          
+                                                                                     dtype = dtype,
+                                                                                     nbchannel=nchannels, 
+                                                                                     rangemin = -16380, 
+                                                                                     rangemax = 16380)
+                
+                cindex = 0
+                
+                # Save analogsignals
+                for channel in segment.analogsignals:
+                    analogsignaldb = neodb.core.AnalogSignalDB(id_segment = id_segment,
+                                                               id_recordingchannel =  rchannels[cindex][1],
+                                                               name = name, 
+                                                               signal = channel.tolist(), 
+                                                               channel_index = rchannels[cindex][0],
+                                                               units = utils.get_quantitie(unit),
+                                                               file_origin = segmentfile_path,
+                                                               sampling_rate = sample_rate*quantities.Hz,
+                                                               t_start = tstart,
+                                                               index = nindex)
+                    analogsignaldb.save(self.connection)
+                    cindex = cindex + 1
+                
+                tlength = len(channel)/sample_rate
+                tstart = tstart + tlength
         
-        # Create recordingchannels
-        rchannels = []  
-        for n in range(nchannels):
-            rc = neodb.core.RecordingChannelDB(id_block = id_session, index = n)
-            id_rc = rc.save(db.NDB)
-            rchannels.append((n, id_rc))
+        if mode == 'Matlab':
+            x = scipy.io.loadmat(session_path)
+            x = x['data'][0]
+            nchannels = 1
+            
+            name = session_path.split('/')[-1]
+            
+            rc = neurodb.neodb.core.RecordingChannelDB(id_block = id_session, index = nchannels)
+            rc.save(self.connection)
+            
+            sg = neurodb.neodb.core.SegmentDB(id_block = id_session, index = nchannels, 
+                                      file_origin = session_path, 
+                                      name = name)
+            sg.save(self.connection)
+            
+            an = neurodb.neodb.core.AnalogSignalDB(id_segment = sg.id, id_recordingchannel = rc.id, 
+                                           signal=x, channel_index = nchannels, units = utils.get_quantitie(unit), 
+                                           sampling_rate = sample_rate*quantities.Hz,
+                                           t_start = 0.0, name = name,
+                                           index = nchannels)
+            
+            an.save(self.connection)
+            
+            neurodb.project.save_channel_spikes(id_block=id_session, channel=nchannels)
+            neurodb.project.update_spike_coordenates(id_block=id_session, channel=nchannels)
+            
         
-        # Create segments
-        tstart = 0.0
-        tlength = 0.0
+    def get_session(self, id):
+        session = neodb.core.BlockDB()
+        id_session = neodb.dbutils.get_id(self.connection, 'block', id_project = self.id, id=id)
+        id_session = id_session[0][0]
+        session.get_from_db(self.connection, id_session)
         
-        for nindex, _, name, segmentfile_path in archivos:
-            segmentdb = neodb.core.SegmentDB(id_session, name, file_origin = segmentfile_path)
-            id_segment = segmentdb.save(db.NDB)
+        return session
+        
             
-            segment = io.RawBinarySignalIO(filename = segmentfile_path).read_segment(sampling_rate = sample_rate,          
-                                                                                 dtype = dtype,
-                                                                                 nbchannel=nchannels, 
-                                                                                 rangemin = -16380, 
-                                                                                 rangemax = 16380)
-            
-            cindex = 0
-            
-            # Save analogsignals
-            for channel in segment.analogsignals:
-                analogsignaldb = neodb.core.AnalogSignalDB(id_segment = id_segment,
-                                                           id_recordingchannel =  rchannels[cindex][1],
-                                                           name = name, 
-                                                           signal = channel.tolist(), 
-                                                           channel_index = rchannels[cindex][0],
-                                                           units = utils.get_quantitie(unit),
-                                                           file_origin = segmentfile_path,
-                                                           sampling_rate = sample_rate*quantities.Hz,
-                                                           t_start = tstart,
-                                                           index = nindex)
-                analogsignaldb.save(self.connection)
-                cindex = cindex + 1
-            
-            tlength = len(channel)/sample_rate
-            tstart = tstart + tlength
 
 def ls():
     if db.NDB == None:
@@ -234,7 +280,7 @@ def create(name, date, description = None, projectcode = None):
         db.connect()
     
     project = Project(name, date, description, projectcode)
-    id = project.save(db.NDB)
+    id = project.save()
     project.id = id
     
     print "Project created. Id: %s"%id
@@ -314,6 +360,7 @@ def save_channel_spikes(id_block, channel):
     
     if len(ansig) != 0:
         ndbdetector = Spike.Detector()
+        ndbdetector.set_parameters(sr=int(ansig.sampling_rate))
         spikes, index, thr = ndbdetector.get_spikes(ansig)
         
         for i in range(len(spikes)):
@@ -392,6 +439,9 @@ def update_spike_coordenates(id_block, channel):
     for spike in spikes:
         mspikes.append(spike.waveform)
     mspikes = np.array(mspikes)
+    
+    if mspikes == []:
+        raise StandardError("Session %s, channel %s have not got spikes.")
     
     pca = PCA(n_components=10)
     #mspikes = normalize(mspikes)
