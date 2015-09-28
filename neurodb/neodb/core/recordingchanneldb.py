@@ -104,6 +104,26 @@ class RecordingChannelDB(neo.core.RecordingChannel):
                 idesr.append(i[0])
         
         return idesr
+    
+    def remove_spikes(self, connection = None):
+        if connection == None:
+            connection = self.connection
+        else:
+            self.connection = connection
+        
+        if connection == None :
+            raise StandardError("There are not connection.")
+        
+        if self.id == None:
+            raise StandardError("There are not recordingchannel")
+        
+        cursor = connection.cursor()
+        query = """delete from spike using recordingchannel 
+                   where recordingchannel.id = spike.id_recordingchannel and 
+                         recordingchannel.id = %s"""
+        
+        cursor.execute(query, [self.id])
+        connection.commit()
         
 if __name__ == '__main__':
     username = 'postgres'

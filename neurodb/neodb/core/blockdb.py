@@ -125,6 +125,7 @@ class BlockDB(neo.core.Block):
         rc.get_from_db(self.connection, id)
         
         return rc
+        
     
     def __get_segments_id(self, id, connection):
         cursor = connection.cursor()

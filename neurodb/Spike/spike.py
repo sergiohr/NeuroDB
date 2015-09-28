@@ -12,8 +12,8 @@ import glob
 import os
 import scipy
 import shutil
-
-
+import scipy.io
+import matplotlib.pyplot as plt
         
 
 class Detector():
@@ -31,7 +31,7 @@ class Detector():
                          w_pre = 20,
                          w_post = 44,
                          detection = 'pos',
-                         stdmin = 5.00,
+                         stdmin = 6.00,
                          stdmax = 50,
                          interpolation = 'y',
                          int_factor = 2,
@@ -130,17 +130,17 @@ class Detector():
         # LOCATE SPIKE TIMES
         nspk = 0;
         xaux = np.argwhere(xf_detect[self.w_pre+1:len(xf_detect)-self.w_post-1-1] > thr) + self.w_pre + 1
-        xaux = np.resize(xaux,len(xaux))
-        xaux0 = 0;
+        xaux = np.resize(xaux,len(xaux)) #position of the peaks
+        xaux0 = 0; # last processed peak
         index = []
         for i in range(len(xaux)):
-            if xaux[i] >= (xaux0 + ref):
+            if xaux[i] >= (xaux0 + ref): # para evitar solapamiento
             # after find a peak it begin search after ref over the last xaux
                 iaux = xf[xaux[i]:xaux[i]+np.floor(ref/2.0)].argmax(0)    # introduces alignment
                 nspk = nspk + 1
                 index.append(iaux + xaux[i])
                 xaux0 = index[nspk-1];
-        
+                    
         # SPIKE STORING (with or without interpolation)
         ls = self.w_pre + self.w_post
         spikes = np.zeros([nspk,ls+4])
@@ -149,7 +149,28 @@ class Detector():
         for i in range(nspk):                          # Eliminates artifacts
             if np.max( np.abs( xf[index[i]-self.w_pre:index[i]+self.w_post] )) < thrmax :
                 spikes[i,:] = xf[index[i]-self.w_pre-1:index[i]+self.w_post+3]
-     
+        
+#         ######################
+#         i = 0
+#         while( i < nspk-1 ):
+#             ######## Eliminates artifacts
+#             peak = index[i]
+#             p = index[i+1]
+#             
+#             max1 = np.max( np.abs( xf[peak-self.w_pre:peak+self.w_post] ))
+#             max2 = np.max( np.abs( xf[p-self.w_pre:p+self.w_post] ))
+#             
+#             if max1 < thrmax:
+#                 if p < (peak + self.w_post+3) and max2 < thrmax:
+#                     i = i + 1
+#                 else:
+#                     spikes[i,:] = xf[index[i]-self.w_pre-1:index[i]+self.w_post+3]
+#             
+#             i = i + 1
+#         
+#         # TODO: falta procesar el ultimo spike
+#         #######################
+
         aux = np.argwhere(spikes[:,self.w_pre] == 0)       #erases indexes that were artifacts
         if len(aux) != 0:
             aux = aux.reshape((1,len(aux)))[0]
@@ -168,4 +189,17 @@ class Detector():
         return spikes, index, thr
 
 if __name__ == '__main__':
+    
+    #x = scipy.io.loadmat('/home/sergio/matlab/extra/NeuroCube/mat/sims/Spikesim.mat')
+    x = scipy.io.loadmat('/home/sergio/Proyectos/sandbox/signal.mat')
+    x = x['data'][0]
+    
+    det = Detector()
+    det.set_parameters(sr=int(24000), stdmin=6)
+    spikes, index, thr = det.get_spikes(x)
+    
+    for i in range(len(spikes)):
+        plt.plot(spikes[i])
+        plt.show()
+    
     pass

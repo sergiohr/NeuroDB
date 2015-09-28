@@ -10,3 +10,4 @@ db.connect(user=config.DBUSER, password=config.DBPASSWORD, hostname=config.DBHOS
 
 import project
 import individual
+import features

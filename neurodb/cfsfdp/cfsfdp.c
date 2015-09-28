@@ -1,3 +1,4 @@
+//compiling with : gcc -fPIC -o cfsfdp.so -shared cfsfdp.c -I/usr/include/pgsql -L/usr/lib/postgresql92/lib64 -lpq
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,6 +55,38 @@ void Quicksort(double *array, double *index, int left, int right)
         Quicksort(array, index, left, pivote-1);
         Quicksort(array, index, pivote+1, right);
      }
+}
+
+
+char* build_query2(double* spikeFeaturesId, int nspikes, int points)
+{
+    char *query = (char*)malloc(sizeof(char)*17*nspikes);
+    char aux[25];
+    int i;
+
+    strcpy(query, "SELECT id_spike, ");
+
+    for(i=1; i<points+1; i++)
+    {
+        sprintf(aux, "p%d, ", i);
+        strcat(query, aux);
+    }
+
+    query[strlen(query)-2] = ' ';
+    query[strlen(query)-1] = '\0';
+
+    strcat(query, ",id from FEATURES where "); //La query no devuelve los registros con el orden de id especificado
+
+    for(i=0; i<nspikes; i++)
+    {
+        sprintf(aux, "id = %d or ", (int)spikeFeaturesId[i]);
+        strcat(query, aux);
+    }
+    query[strlen(query)-4] = '\0';
+
+    query = realloc(query, sizeof(char)*(strlen(query)+1));
+
+    return query;
 }
 
 char* build_query(double* id_spike, int nspikes, int points)
@@ -188,7 +221,7 @@ float get_distance_from_res(PGresult *res, int i, int j, int n)
 
 }
 
-float** get_distances(char connect[], double* id_spike, int nspikes, int points)
+float* featuresDistances(double* spikeFeatures, double* id_spike, int n, int points)
 {
     PGconn          *conn = NULL;
     PGresult        *res;
@@ -196,7 +229,66 @@ float** get_distances(char connect[], double* id_spike, int nspikes, int points)
     int rec_count;
     char* query;
 
-    float** distances;
+    float* distances;
+    float id;
+
+    conn = PQconnectdb("dbname=demo host=172.16.162.128 user=postgres password=postgres");
+    if (PQstatus(conn) == CONNECTION_BAD) {
+        printf("We were unable to connect to the database");
+        return NULL;
+    }
+
+    query = build_query2(spikeFeatures, n, points);
+
+    res = PQexec(conn,query);
+
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        printf("get_dc: We did not get any data!");
+        return NULL;
+    }
+
+    rec_count = PQntuples(res);
+
+    distances = (float*)calloc(rec_count*rec_count,sizeof(float));
+
+    for(i=0; i<rec_count; i++)
+    {
+        for(j=0; j<rec_count; j++)
+        {
+            distances[i*rec_count+j] = get_distance_from_res(res, i, j, points);
+        }
+    }
+
+    for (i = 0; i < n; i++)
+    {
+        sscanf(PQgetvalue(res, i, 0),"%f",&(id));
+        id_spike[i] = (double)id;
+    }
+
+    //esto es para que los id de features coincida con el orden de los ids
+    // se agrego a la query
+    for (i = 0; i < n; i++)
+    {
+        sscanf(PQgetvalue(res, i, points +1),"%f",&(id));
+        spikeFeatures[i] = (double)id;
+    }
+
+    PQclear(res);
+    PQfinish(conn);
+    free(query);
+
+    return distances;
+}
+
+float* get_distances(char connect[], double* id_spike, int nspikes, int points)
+{
+    PGconn          *conn = NULL;
+    PGresult        *res;
+    int i, j;
+    int rec_count;
+    char* query;
+
+    float* distances;
     float id;
 
     conn = PQconnectdb(connect);
@@ -216,18 +308,13 @@ float** get_distances(char connect[], double* id_spike, int nspikes, int points)
 
     rec_count = PQntuples(res);
 
-    distances = (float**)malloc(rec_count*sizeof(float*));
-
-    for(i=0; i<rec_count; i++)
-    {
-        distances[i] = (float*)calloc(rec_count,sizeof(float));
-    }
+    distances = (float*)calloc(rec_count*rec_count,sizeof(float));
 
     for(i=0; i<rec_count; i++)
     {
         for(j=0; j<rec_count; j++)
         {
-            distances[i][j] = get_distance_from_res(res, i, j, points);
+            distances[i*rec_count+j] = get_distance_from_res(res, i, j, points);
         }
     }
 
@@ -246,7 +333,7 @@ float** get_distances(char connect[], double* id_spike, int nspikes, int points)
 
 float get_dc(char connect[], double* id_spike, int nspikes, float percent, int points)
 {
-    float **distances;
+    float *distances;
     float *array_distances;
     float dc;
 
@@ -258,7 +345,7 @@ float get_dc(char connect[], double* id_spike, int nspikes, float percent, int p
 
     for (i = 0, k = 0; i < nspikes; i++) {
           for (j = i+1 ; j < nspikes; j++, k++) {
-                array_distances[k] = distances[i][j];
+                array_distances[k] = distances[i*nspikes+j];
           }
       }
 
@@ -269,16 +356,44 @@ float get_dc(char connect[], double* id_spike, int nspikes, float percent, int p
 
     dc = array_distances[position];
 
-    for (i = 0; i < nspikes; i++) {
-        free(distances[i]);
-    }
     free(distances);
     free(array_distances);
 
     return dc;
 }
 
-int get_local_density(float** distances, int rec_count, float dc, double* local_density, char kernel[20])
+float getDC(char connect[], double* features,  double* id_spikes, int nspikes, float percent, int points)
+{
+    float *distances;
+    float *array_distances;
+    float dc;
+
+    int i, j, k;
+    int position;
+
+    distances = featuresDistances(features, id_spikes, nspikes, points);
+    array_distances = calloc(nspikes*(nspikes+1)/2-nspikes, sizeof(float));
+
+    for (i = 0, k = 0; i < nspikes; i++) {
+          for (j = i+1 ; j < nspikes; j++, k++) {
+                array_distances[k] = distances[i*nspikes+j];
+          }
+      }
+
+    //There are nspikes zeros, because distances from itselfs
+    position = k*percent/100 -1 + nspikes;
+    //position = nspikes + 2*nspikes*percent/100 -1;
+    qsort(array_distances, k, sizeof(float), &compare);
+
+    dc = array_distances[position];
+
+    free(distances);
+    free(array_distances);
+
+    return dc;
+}
+
+int get_local_density(float* distances, int rec_count, float dc, double* local_density, char kernel[20])
 //TODO: Parameter size
 {
     int i, j;
@@ -290,7 +405,7 @@ int get_local_density(float** distances, int rec_count, float dc, double* local_
     {
         for (i = 0; i < rec_count; i++) {
               for (j = i+1; j < rec_count; j++) {
-                    distance = distances[i][j];
+                    distance = distances[i*rec_count+j];
                     if ( (distance - dc) < 0 )
                     {
                         local_density[i] += 1;
@@ -304,7 +419,7 @@ int get_local_density(float** distances, int rec_count, float dc, double* local_
     {
         for (i = 0; i < rec_count; i++) {
               for (j = i+1; j < rec_count; j++) {
-                    distance = distances[i][j];
+                    distance = distances[i*rec_count+j];
                     local_density[i] = local_density[i] + exp(-(distance/dc)*(distance/dc));
                     local_density[j] = local_density[j] + exp(-(distance/dc)*(distance/dc));
               }
@@ -314,7 +429,7 @@ int get_local_density(float** distances, int rec_count, float dc, double* local_
     return 0;
 }
 
-int get_distance_to_higher_density(float** distances, int rec_count, double* rho, double* delta, double* nneigh){
+int get_distance_to_higher_density(float* distances, int rec_count, double* rho, double* delta, double* nneigh){
 
     double dist;
     double tmp;
@@ -331,7 +446,7 @@ int get_distance_to_higher_density(float** distances, int rec_count, double* rho
             if(i == j) continue;
             if(rho[j] > rho[i]){
 
-                tmp = distances[i][j];
+                tmp = distances[i*rec_count+j];
 
                 if(!flag){ //first time
                     dist = tmp;
@@ -347,7 +462,7 @@ int get_distance_to_higher_density(float** distances, int rec_count, double* rho
         }
         if(!flag){
             for(k = 0; k < rec_count; k++){
-                tmp = distances[i][k];
+                tmp = distances[i*rec_count+k];
                 if (tmp > dist) {
                     dist = tmp;
                     index_nneigh = k;
@@ -403,7 +518,7 @@ void get_centers(double* rho, double *delta, double* centers, int rec_count)
 int dp(double* x, double *y, int n, double* labels, double* centers, char kernel[20])
 {
     int i, j, k=0, position;
-    float** distances =(float**)malloc(n*sizeof(float*));
+    float* distances =(float*)malloc(n*n*sizeof(float*));
     double* rho = (double*)calloc(n,sizeof(double));
     double* delta = (double*)calloc(n,sizeof(double));
     double* nneigh = (double*)calloc(n,sizeof(double));
@@ -414,17 +529,14 @@ int dp(double* x, double *y, int n, double* labels, double* centers, char kernel
     double* ordrho;
     double rho_average;
 
-    for(i=0; i<n; i++)
-    {
-        distances[i] = (float*)calloc(n,sizeof(float));
-    }
+    distances = (float*)calloc(n*n,sizeof(float));
 
     for(i=0; i<n; i++)
     {
         for(j=0; j<n; j++)
         {
-            distances[i][j] = pow(pow(x[i]-x[j],2)+pow(y[i]-y[j],2), 0.5);
-            vdistances[k] = (float)distances[i][j];
+            distances[i*n+j] = pow(pow(x[i]-x[j],2)+pow(y[i]-y[j],2), 0.5);
+            vdistances[k] = (float)distances[i*n+j];
             k++;
         }
     }
@@ -466,7 +578,7 @@ int dp(double* x, double *y, int n, double* labels, double* centers, char kernel
         {
             for(j=i+1; j<n; j++)
             {
-                if ((labels[i]!=labels[j]) && (distances[i][j] <= dc))
+                if ((labels[i]!=labels[j]) && (distances[i*n+j] <= dc))
                 {
                     rho_average = (rho[i]+rho[j])/2.0;
                     if (rho_average > bord_rho[(int)labels[i]])
@@ -483,9 +595,6 @@ int dp(double* x, double *y, int n, double* labels, double* centers, char kernel
         }
     }
 
-    for (i = 0; i < n; i++) {
-        free(distances[i]);
-    }
     free(distances);
     free(ordrho_index);
     free(bord_rho);
@@ -497,10 +606,70 @@ int dp(double* x, double *y, int n, double* labels, double* centers, char kernel
 
 }
 
+
+int assignation(double* rho, double* nneigh, float* distances, float dc, double* labels, int n, double* centers)
+{
+    double *ordrho_index;
+    double *ordrho;
+    double rho_average;
+    double *bord_rho;
+    int i, j;
+
+    ordrho_index = (double*)calloc(n, sizeof(double));
+    for(i=0; i<n; i++)
+    {
+        labels[i] = -1;
+        ordrho_index[i] = i;
+    }
+
+    for(i=1; i<centers[0]+1; i++)
+    {
+        labels[(int)centers[i]] = i;
+    }
+
+    ordrho = cp_vector(rho, n);
+    Quicksort(ordrho, ordrho_index, 0, n-1);
+
+    for(i=0; i<n; i++)
+    {
+        if (labels[(int)ordrho_index[i]] == -1)
+            labels[(int)ordrho_index[i]] = labels[(int)nneigh[(int)ordrho_index[i]]];
+    }
+
+    bord_rho = (double*)calloc((int)centers[0]+1,sizeof(double));
+    if (centers[0]>1)
+    {
+        for(i=0; i<n-1; i++)
+        {
+            for(j=i+1; j<n; j++)
+            {
+                if ((labels[i]!=labels[j]) && (distances[i*n+j] <= dc))
+                {
+                    rho_average = (rho[i]+rho[j])/2.0;
+                    if (rho_average > bord_rho[(int)labels[i]])
+                        bord_rho[(int)labels[i]] = rho_average;
+                    if (rho_average > bord_rho[(int)labels[j]])
+                        bord_rho[(int)labels[j]] = rho_average;
+                }
+            }
+        }
+        for(i=0; i<n; i++)
+        {
+            if (rho[i] < bord_rho[(int)labels[i]])
+                labels[i] = 0;
+        }
+    }
+    free(ordrho_index);
+    free(ordrho);
+    free(bord_rho);
+    return 0;
+}
+
+
 int cluster_dp(char connect[], double* rho, double *delta, double* id_spike, double* cluster_index,
                double* nneigh, double* centers, float dc, int points, int nspikes, char kernel[20])
 {
-    float **distances;
+    float *distances;
     int i, j;
     double* ordrho;
     double* ordrho_index;
@@ -514,57 +683,76 @@ int cluster_dp(char connect[], double* rho, double *delta, double* id_spike, dou
 
     get_centers(rho, delta, centers, nspikes);
 
-    ordrho_index = (double*)calloc(nspikes, sizeof(double));
-    for(i=0; i<nspikes; i++)
-    {
-        cluster_index[i] = -1;
-        ordrho_index[i] = i;
-    }
+    assignation(rho, nneigh, distances, dc, cluster_index, nspikes, centers);
 
-    for(i=1; i<centers[0]+1; i++)
-    {
-        cluster_index[(int)centers[i]] = i;
-    }
+//    ordrho_index = (double*)calloc(nspikes, sizeof(double));
+//    for(i=0; i<nspikes; i++)
+//    {
+//        cluster_index[i] = -1;
+//        ordrho_index[i] = i;
+//    }
+//
+//    for(i=1; i<centers[0]+1; i++)
+//    {
+//        cluster_index[(int)centers[i]] = i;
+//    }
+//
+//    ordrho = cp_vector(rho, nspikes);
+//    Quicksort(ordrho, ordrho_index, 0, nspikes-1);
+//
+//    for(i=0; i<nspikes; i++)
+//    {
+//        if (cluster_index[(int)ordrho_index[i]] == -1)
+//            cluster_index[(int)ordrho_index[i]] = cluster_index[(int)nneigh[(int)ordrho_index[i]]];
+//    }
+//
+//    bord_rho = (double*)calloc((int)centers[0]+1,sizeof(double));
+//    if (centers[0]>1)
+//    {
+//        for(i=0; i<nspikes-1; i++)
+//        {
+//            for(j=i+1; j<nspikes; j++)
+//            {
+//                if ((cluster_index[i]!=cluster_index[j]) && (distances[i*nspikes+j] <= dc))
+//                {
+//                    rho_average = (rho[i]+rho[j])/2.0;
+//                    if (rho_average > bord_rho[(int)cluster_index[i]])
+//                        bord_rho[(int)cluster_index[i]] = rho_average;
+//                    if (rho_average > bord_rho[(int)cluster_index[j]])
+//                        bord_rho[(int)cluster_index[j]] = rho_average;
+//                }
+//            }
+//        }
+//        for(i=0; i<nspikes; i++)
+//        {
+//            if (rho[i] < bord_rho[(int)cluster_index[i]])
+//                cluster_index[i] = 0;
+//        }
+//    }
+//
+//    free(distances);
+//    free(ordrho_index);
+//    free(bord_rho);
+    return 0;
+}
 
-    ordrho = cp_vector(rho, nspikes);
-    Quicksort(ordrho, ordrho_index, 0, nspikes-1);
 
-    for(i=0; i<nspikes; i++)
-    {
-        if (cluster_index[(int)ordrho_index[i]] == -1)
-            cluster_index[(int)ordrho_index[i]] = cluster_index[(int)nneigh[(int)ordrho_index[i]]];
-    }
+int dpClustering(double* spikeFeatures, int n, float dc, int points, char kernel[20], double* id_spike, double* labels, double* rho, double* delta)
+{
+    float *distances;
+    double* nneigh= (double*)calloc(n, sizeof(double));
+    //double* rho = (double*)calloc(n, sizeof(double));
+    //double* delta = (double*)calloc(n, sizeof(double));
+    double* centers = (double*)calloc(n, sizeof(double));
 
-    bord_rho = (double*)calloc((int)centers[0]+1,sizeof(double));
-    if (centers[0]>1)
-    {
-        for(i=0; i<nspikes-1; i++)
-        {
-            for(j=i+1; j<nspikes; j++)
-            {
-                if ((cluster_index[i]!=cluster_index[j]) && (distances[i][j] <= dc))
-                {
-                    rho_average = (rho[i]+rho[j])/2.0;
-                    if (rho_average > bord_rho[(int)cluster_index[i]])
-                        bord_rho[(int)cluster_index[i]] = rho_average;
-                    if (rho_average > bord_rho[(int)cluster_index[j]])
-                        bord_rho[(int)cluster_index[j]] = rho_average;
-                }
-            }
-        }
-        for(i=0; i<nspikes; i++)
-        {
-            if (rho[i] < bord_rho[(int)cluster_index[i]])
-                cluster_index[i] = 0;
-        }
-    }
+    distances = featuresDistances(spikeFeatures, id_spike, n, points); //se reordena spikeFeatures, id_spike porque la query a la base devuelve en otro orden
+    get_local_density(distances, n, dc, rho, kernel);
+    get_distance_to_higher_density(distances, n, rho, delta, nneigh);
 
-    for (i = 0; i < nspikes; i++) {
-        free(distances[i]);
-    }
-    free(distances);
-    free(ordrho_index);
-    free(bord_rho);
+    get_centers(rho, delta, centers, n);
+
+    assignation(rho, nneigh, distances, dc, labels, n, centers);
+
     return 0;
 }
 
@@ -607,7 +795,22 @@ int main()
                             132692, 137758, 135788, 133059, 137856, 133315, 136367, 134389, 133261, 136265,
                             134845, 133291, 130855, 134645, 133107, 136139, 137656, 137249, 132297, 135167 };
 
+    double features[] = {   28,    51,    61,    69,   109,   144,   188,   196,   210,   211,
+                            226,   238,   244,   292,   293,   309,   359,   360,   386,   391,
+                            476,   515,   521,   560,   567,   621,   631,   646,   654,   664,
+                            673,   685,   697,   720,   724,   743,   772,   774,   775,   776,
+                            783,   839,   872,   885,   888,   891,   994,  1035,  1046,  1067,
+                            1098,  1116,  1135,  1192,  1196,  1222,  1244,  1324,  1338,  1377,
+                            1394,  1431,  1461,  1471,  1479,  1517,  1519,  1559,  1585,  1642,
+                            1645,  1679,  1702,  1763,  1795,  1819,  1846,  1882,  1893,  1896,
+                            1904,  1932,  1954,  1966,  1985,  2004,  2010,  2012,  2021,  2077,
+                            2085,  2116,  2141,  2158,  2161,  2188,  2225,  2347,  2349,  2401,
+                            2403,  2413,  2442,  2447,  2482,  2501,  2543,  2552,  2561,  2569,
+                            2579,  2598,  2635,  2712,  2803,  2804,  2825,  2867,  2916,  2987,
+                            2993,  3038};
+
     int nspikes = 331;
+    nspikes = 122;
     int points = 6;
     float dc;
     double* local_density = (double*)calloc(nspikes,sizeof(double));
@@ -619,10 +822,13 @@ int main()
 
     dc = get_dc(connect, id_spike, nspikes, 1.8, points);
 
-    cluster_dp(connect, local_density, distance_to_higher_density, id_spike, clusters,
-               nneigh, centers, dc, 6, nspikes, "gaussian");
+    //cluster_dp(connect, local_density, distance_to_higher_density, id_spike, clusters,
+    //           nneigh, centers, dc, 6, nspikes, "gaussian");
 
     //dp(x, y, 27, labels, centers, "gaussian");
-    printf("dc:%f, 1:%lf 2:%lf\n",dc, local_density[22], distance_to_higher_density[22]);
+    //printf("dc:%f, 1:%lf 2:%lf\n",dc, local_density[22], distance_to_higher_density[22]);
+
+    //dpClustering(features, nspikes, dc, 6, "gaussian", clusters);
+
     return 0;
 }

@@ -236,6 +236,9 @@ class Project(object):
             neurodb.project.update_spike_coordenates(id_block=id_session, channel=nchannels)
             
         
+        return id_session
+            
+        
     def get_session(self, id):
         session = neodb.core.BlockDB()
         id_session = neodb.dbutils.get_id(self.connection, 'block', id_project = self.id, id=id)
@@ -424,8 +427,6 @@ def draw_clusters(clusters, path = None):
     else:
         plt.show()
     
-    
-
 
 def update_spike_coordenates(id_block, channel):
     #TODO: Create p1, p2 y p3 columns
@@ -451,13 +452,21 @@ def update_spike_coordenates(id_block, channel):
     
     spikes_id = neodb.core.spikedb.get_ids_from_db(db.NDB, id_block, channel)
     
+    #TODO: independizar esta parte de querys a la base
+    cursor = db.NDB.cursor()
     i = 0
     for p in transf:
         id = spikes_id[i]
         neodb.core.spikedb.update(db.NDB, id = id, p1 = p[0], p2 = p[1], p3 = p[2], p4 = p[3], p5 = p[4], p6 = p[5], p7 = p[6], p8 = p[7], p9 = p[8], p10 = p[9])
+        query = """INSERT INTO FEATURES (id_spike, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10)
+                  VALUES ('%s', '%s','%s', '%s','%s', 
+                          '%s','%s', '%s','%s', '%s', '%s')"""%(id, p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9])
+        cursor.execute(query)
+        db.NDB.commit()
+        
         i = i+1
     
-
+    
 # def eliminar(ndb):
 #     
 #     query = "delete from public.analogsignal where name = '030712_1_00'"

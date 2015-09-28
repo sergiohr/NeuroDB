@@ -16,7 +16,7 @@ class SpikeDB(neo.core.Spike):
     def __init__(self, id_unit = None, id_segment = None, id_recordingchannel = None,
                         time = None, waveform = None, left_sweep = None, 
                         sampling_rate = None, name = None, description = None,
-                        file_origin = None, index = None):
+                        file_origin = None, index = None, connection = None):
         self.id = None
         self.id_unit = id_unit
         self.id_segment = id_segment
@@ -43,12 +43,16 @@ class SpikeDB(neo.core.Spike):
                 self.sampling_rate = sampling_rate
             else:
                 self.sampling_rate = float(sampling_rate.simplified)
+        else:
+            self.sampling_rate = sampling_rate
+        
+        self.connection = connection
         
         self.name = name
         self.description = description
         self.file_origin = file_origin
 
-    def save(self, connection):
+    def save(self, connection = None):
         # Check mandatory values
         if self.id_segment == None:
             raise StandardError("Spike must have id_segment.")
@@ -56,9 +60,17 @@ class SpikeDB(neo.core.Spike):
         if self.waveform == []:
             raise StandardError("Spike must have a signal (waveform).")
         
-        if self.index == []:
+        if self.index == [] or self.index == None:
             raise StandardError("""Spike must have a index, it is the index of
                                    the maximum point of the signal.""")
+        
+        if connection == None:
+            connection = self.connection
+        else:
+            self.connection = connection
+        
+        if connection == None :
+            raise StandardError("There are not connection.")
         
         if self.left_sweep != None:
             left_sweep = float(self.left_sweep)
@@ -76,7 +88,7 @@ class SpikeDB(neo.core.Spike):
             sampling_rate = self.sampling_rate
         
         # Format signal
-        signalb = numpy.int16(self.waveform)
+        signalb = numpy.float16(self.waveform)
         
         # QUERY
         cursor = connection.cursor()
@@ -121,43 +133,82 @@ class SpikeDB(neo.core.Spike):
                                      index = self.index, 
                                      id_segment = self.id_segment,
                                      id_recordingchannel = self.id_recordingchannel)
+    
+    def remove(self, connection = None):
+        if connection == None:
+            connection = self.connection
+        else:
+            self.connection = connection
         
+        if connection == None :
+            raise StandardError("There are not connection.")
+        
+        if self.id == None:
+            raise StandardError("There are not spike to remove.")
+        
+        cursor = connection.cursor()
+        query = """ DELETE FROM spike
+                    WHERE id = %s"""
+        cursor.execute(query, [self.id])
+        
+        connection.commit()
+        
+        self.id = None
 
-
-def get_from_db(connection, id_block, channel, **kwargs):
+def get_from_db(connection, id_block = None, channel = None, **kwargs):
     
-    for parameter in kwargs.keys():
-        if parameter not in ["id", "id_segment", "id_recordingchannel", "index", "time"]:
-            raise StandardError("""Parameter %s do not belong to SpikeDB.""")%parameter
-    
-    if id_block == None:
-        raise StandardError(""" You must specify id_block.""")
-    
-    if channel == None:
-        raise StandardError(""" You must specify number of channel.""")
+    param_id = False
+    if (id_block == None or channel == None):
+        if "id" not in kwargs.keys():
+            raise StandardError("""If not id_block == None or channel == None a parameter must be id.""")
+        else:
+            param_id = True
+    else:
+        for parameter in kwargs.keys():
+            if parameter not in ["id", "id_segment", "id_recordingchannel", "index", "time"]:
+                raise StandardError("""Parameter %s do not belong to SpikeDB.""")%parameter
+        
+        if id_block == None:
+            raise StandardError(""" You must specify id_block.""")
+        
+        if channel == None:
+            raise StandardError(""" You must specify number of channel.""")
     
     # QUERY
     cursor = connection.cursor()
     
-    query = """SELECT spike.id,
-                      spike.id_unit,
-                      spike.id_segment,
-                      spike.id_recordingchannel,
-                      spike.time,
-                      spike.waveform,
-                      spike.index,
-                      spike.sampling_rate
-               FROM spike
-               JOIN recordingchannel ON id_recordingchannel = recordingchannel.id
-               WHERE recordingchannel.id_block = %s and 
-                     recordingchannel.index = %s """%(id_block, channel)
-    constraint = ""
+    if param_id == False:
+        query = """SELECT spike.id,
+                          spike.id_unit,
+                          spike.id_segment,
+                          spike.id_recordingchannel,
+                          spike.time,
+                          spike.waveform,
+                          spike.index,
+                          spike.sampling_rate
+                   FROM spike
+                   JOIN recordingchannel ON id_recordingchannel = recordingchannel.id
+                   WHERE recordingchannel.id_block = %s and 
+                         recordingchannel.index = %s """%(id_block, channel)
+        constraint = ""
+        
+        for key, value in kwargs.iteritems():
+            constraint = "%s and spike.%s='%s'"%(constraint,key,value)
+        
+        if constraint != "":
+            query = query + constraint
     
-    for key, value in kwargs.iteritems():
-        constraint = "%s and spike.%s='%s'"%(constraint,key,value)
-    
-    if constraint != "":
-        query = query + constraint
+    else:
+        query = """SELECT spike.id,
+                          spike.id_unit,
+                          spike.id_segment,
+                          spike.id_recordingchannel,
+                          spike.time,
+                          spike.waveform,
+                          spike.index,
+                          spike.sampling_rate
+                   FROM spike
+                   WHERE id = %s"""%(kwargs['id'])
     
     cursor.execute(query)
     results = cursor.fetchall()
@@ -167,8 +218,8 @@ def get_from_db(connection, id_block, channel, **kwargs):
     for result in results:
         spike = SpikeDB(id_unit = result[1], id_segment = result[2], 
                         id_recordingchannel = result[3], time = result[4], 
-                        waveform = numpy.frombuffer(result[5], numpy.int16),
-                        index = result[6], sampling_rate = result[7])
+                        waveform = numpy.frombuffer(result[5], numpy.float16),
+                        index = result[6], sampling_rate = result[7], connection=connection)
         spike.id = result[0]
         spikes.append(spike)
         
