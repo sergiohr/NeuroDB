@@ -430,7 +430,7 @@ int get_local_density(float* distances, int rec_count, float dc, double* local_d
 }
 
 int get_distance_to_higher_density(float* distances, int rec_count, double* rho, double* delta, double* nneigh){
-
+    //minimum distance to the point with higher density than own
     double dist;
     double tmp;
     int i, j, k, flag;
@@ -445,9 +445,10 @@ int get_distance_to_higher_density(float* distances, int rec_count, double* rho,
         for(j = 0; j < rec_count; j++){
             if(i == j) continue;
             if(rho[j] > rho[i]){
-
+                //distance between i and j
                 tmp = distances[i*rec_count+j];
 
+                //index_nneigh contains index of the point that minimum distance
                 if(!flag){ //first time
                     dist = tmp;
                     index_nneigh = j;
@@ -459,7 +460,7 @@ int get_distance_to_higher_density(float* distances, int rec_count, double* rho,
                     }
                 }
             }
-        }
+        }// Si i se trata de un punto de mayor densidad se carga la distancia maxima
         if(!flag){
             for(k = 0; k < rec_count; k++){
                 tmp = distances[i*rec_count+k];
@@ -645,11 +646,19 @@ int assignation(double* rho, double* nneigh, float* distances, float dc, double*
             {
                 if ((labels[i]!=labels[j]) && (distances[i*n+j] <= dc))
                 {
-                    rho_average = (rho[i]+rho[j])/2.0;
-                    if (rho_average > bord_rho[(int)labels[i]])
-                        bord_rho[(int)labels[i]] = rho_average;
-                    if (rho_average > bord_rho[(int)labels[j]])
-                        bord_rho[(int)labels[j]] = rho_average;
+//                    rho_average = (rho[i]+rho[j])/2.0;
+//                    if (rho_average > bord_rho[(int)labels[i]])
+//                        bord_rho[(int)labels[i]] = rho_average;
+//                    if (rho_average > bord_rho[(int)labels[j]])
+//                        bord_rho[(int)labels[j]] = rho_average;
+                    if (rho[i] > bord_rho[(int)labels[i]])
+                    {
+                        bord_rho[(int)labels[i]] = rho[i];
+                    }
+                    if (rho[j] > bord_rho[(int)labels[j]])
+                    {
+                        bord_rho[(int)labels[j]] = rho[j];
+                    }
                 }
             }
         }

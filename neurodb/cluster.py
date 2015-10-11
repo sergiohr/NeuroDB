@@ -98,9 +98,13 @@ class DPClustering():
         
         labels = []
         for j in range(len(spike_ids_cp)):
+            flag = 0
             for k in range(len(spikes)):
                 if spike_ids_cp[j] in spikes[k][1]:
                     labels.append(cluster_index[k])
+                    flag = 1
+            if flag == 0:
+                labels.append(0)
         
         neurodb.features.removeOnDB(features_id=features_ids)
         return np.array(labels)
@@ -194,6 +198,8 @@ class DPClustering():
         
         libcd.dpClustering(features, nspikes, dc, points, "gaussian", spikes_id, cluster_index, rho, delta)
         
+        plt.plot(rho, delta, 'o')
+        plt.show()
         templates = []
         spikes = []
         out = []
@@ -206,16 +212,12 @@ class DPClustering():
                 if cluster_index[j] == i:
                     spike = neurodb.neodb.core.spikedb.get_from_db(dbconn, id = int(spikes_id[j]))
                     signal = spike[0].waveform
-                    plt.plot(signal)
                     template = template + signal
                     gspikes.append(spikes_id[j])
                     k = k + 1
-            
             template = template/k
-            print k
-            plt.show()
             out.append((template, gspikes))
-        print "####"
+        
         output.put(out)
         
     def __insertFeaturesTemplate(self, templates, spike_ids):
@@ -252,8 +254,8 @@ if __name__ == '__main__':
     id_project = 19
     id_session = "78"
     channel = "1"
-    points = 10
-    n_nodos = 5
+    points = 3
+    n_nodos = 1
     
     if db.NDB == None:
         db.connect()
@@ -276,14 +278,20 @@ if __name__ == '__main__':
     
     dp = DPClustering(points=3, percentage_dc=1.8, kernel="gaussian", threading = "serial", nnodos = n_nodos)
     labels = dp.fitSpikes(spikes)
-    
-    for i in range(1, int(labels.max())+1):
+    print labels
+    for i in range(0, int(labels.max())+1):
+        count = 0
+        template = np.zeros(64, np.float64)
+        plt.subplot(int(labels.max())+1,1,i+1)
         for j in range(len(spikes)):    
             if labels[j] == i:
                 spike = neurodb.neodb.core.spikedb.get_from_db(db.NDB, id = int(spikes[j]))
                 signal = spike[0].waveform
-                plt.plot(signal)
-        
-        plt.show()
+                template = template + signal
+                plt.plot(signal, 'b')
+                count = count + 1
+        plt.plot(template/count, 'r')
+        plt.title(str(i) + " " + str(count))
+    plt.show()
     
     pass
