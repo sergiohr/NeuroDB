@@ -72,7 +72,11 @@ class DPClustering():
                 results = self.__process_multi(spike_ids)
             
             if self.threading == "serial":
-                results = self.__process_serial(spike_ids)
+                if self.nnodos == 1:
+                    spike_ids, labels = self.__process_serial(spike_ids)
+                    return labels
+                else:
+                    results = self.__process_serial(spike_ids)
             
         if results != []:
             templates = []
@@ -85,13 +89,13 @@ class DPClustering():
             
             features_ids = np.array(features_ids, np.float64)
      
-            nspikes = len(features_ids)
+            nspikes = len(features_ids) 
             rho = np.empty(nspikes)
             delta = np.empty(nspikes)
             id_spikes = np.empty(nspikes)
             cluster_index = np.empty(len(features_ids))
-            dc = libcd.getDC(connect, features_ids, id_spikes, len(features_ids), np.float(2.0), points)
-            libcd.dpClustering(features_ids, len(features_ids), dc, points, "gaussian", id_spikes, cluster_index, rho, delta)
+            dc = libcd.getDC(connect, features_ids, id_spikes, len(features_ids), np.float(2.0), self.points)
+            libcd.dpClustering(features_ids, len(features_ids), dc, self.points, "gaussian", id_spikes, cluster_index, rho, delta)
             # Cuando se hace una consulta a la base no se devuelve los ids ordenados segun la consulta
             
         spikes = neurodb.features.getFromDB(features_id=features_ids, column='extra')
@@ -160,8 +164,12 @@ class DPClustering():
         nodos = self.__select_nodes(spikes)
         
         results = []
+        if (self.nnodos == 1):
+            spikes_id, labels = self.__clustering(nodos[0], self.points, output)
+            return spikes_id, labels
+            
         for nodo in nodos:
-            self.__clustering(nodo, 3, output)
+            self.__clustering(nodo, self.points, output)
             result = output.get()
             results.append(result)
         
@@ -198,8 +206,11 @@ class DPClustering():
         
         libcd.dpClustering(features, nspikes, dc, points, "gaussian", spikes_id, cluster_index, rho, delta)
         
-        plt.plot(rho, delta, 'o')
-        plt.show()
+        if (self.nnodos == 1):
+            return spikes_id, cluster_index
+        
+        #plt.plot(rho, delta, 'o')
+        #plt.show()
         templates = []
         spikes = []
         out = []
@@ -225,6 +236,10 @@ class DPClustering():
         password = 'postgres'
         host = '172.16.162.128'
         dbname = 'demo'
+        
+        if (len(templates) < 10):
+            raise StandardError("The amount of templates is not enough for calculating PCA. Templates: %s"%(len(templates)))
+        
         pca = PCA(n_components=10)
         transf = pca.fit_transform(templates)
         
@@ -252,10 +267,11 @@ class DPClustering():
 if __name__ == '__main__':
     connect = "dbname=demo host=172.16.162.128 user=postgres password=postgres"
     id_project = 19
-    id_session = "78"
+    #id_session = "78" # easy1 + easy2 + easy3
+    id_session = "80"
     channel = "1"
     points = 3
-    n_nodos = 1
+    n_nodos = 12
     
     if db.NDB == None:
         db.connect()
@@ -276,13 +292,14 @@ if __name__ == '__main__':
     
     spikes = rc.get_spikes()
     
-    dp = DPClustering(points=3, percentage_dc=1.8, kernel="gaussian", threading = "serial", nnodos = n_nodos)
+    np.set_printoptions(threshold=np.nan)
+    dp = DPClustering(points=points, percentage_dc=2, kernel="gaussian", threading = "serial", nnodos = n_nodos)
     labels = dp.fitSpikes(spikes)
     print labels
     for i in range(0, int(labels.max())+1):
         count = 0
         template = np.zeros(64, np.float64)
-        plt.subplot(int(labels.max())+1,1,i+1)
+        #plt.subplot(int(labels.max())+1,1,i+1)
         for j in range(len(spikes)):    
             if labels[j] == i:
                 spike = neurodb.neodb.core.spikedb.get_from_db(db.NDB, id = int(spikes[j]))
@@ -292,6 +309,6 @@ if __name__ == '__main__':
                 count = count + 1
         plt.plot(template/count, 'r')
         plt.title(str(i) + " " + str(count))
-    plt.show()
+        plt.show()
     
     pass

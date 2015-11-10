@@ -58,6 +58,17 @@ void Quicksort(double *array, double *index, int left, int right)
 }
 
 
+double mean(double *array, int n)
+{
+    int i;
+    double acum = 0;
+    for(i=0; i<n; i++)
+    {
+        acum = acum + array[0];
+    }
+    return acum/n;
+}
+
 char* build_query2(double* spikeFeaturesId, int nspikes, int points)
 {
     char *query = (char*)malloc(sizeof(char)*17*nspikes);
@@ -132,16 +143,21 @@ double* cp_vector(double* vector, int n)
     return copy;
 }
 
-double maxvector(double* rho, int n)
+double argmaxvector(double* rho, int n)
 {
     int i;
-    double max = rho[0];
+    int argmax = 0;
+    double max = rho[argmax];
     for(i=1; i<n; i++)
     {
-        if (max<rho[i]) max=rho[i];
+        if (max<rho[i])
+        {
+            argmax=i;
+            max = rho[i];
+        }
     }
 
-    return max;
+    return argmax;
 }
 
 void least_squares(double *x,double *y,int n, double *m, double *b, double *sd)
@@ -434,7 +450,7 @@ int get_distance_to_higher_density(float* distances, int rec_count, double* rho,
     double dist;
     double tmp;
     int i, j, k, flag;
-    int index_nneigh;
+    int index_nneigh, index_m;
 
     for (i = 0; i < rec_count; i++)
         delta[i] = 0;
@@ -465,14 +481,23 @@ int get_distance_to_higher_density(float* distances, int rec_count, double* rho,
             for(k = 0; k < rec_count; k++){
                 tmp = distances[i*rec_count+k];
                 if (tmp > dist) {
-                    dist = tmp;
+                    dist = 0;
                     index_nneigh = k;
                 }
             }
+            index_m = i;
         }
         delta[i] = dist;
         nneigh[i] = index_nneigh;
     }
+
+    tmp = 0;
+    for(k = 0; k < rec_count; k++){
+        if (delta[k] > tmp){
+            tmp = delta[k];
+        }
+    }
+    delta[index_m] = 2*tmp;
 
     return 0;
 }
@@ -484,18 +509,26 @@ void get_centers(double* rho, double *delta, double* centers, int rec_count)
     double max;
     double m, b, sd;
     double *ajuste;
-    int i;
+    int i, argmax;
+    double pmean;
 
     //eliminate firsts deltas, because it are a isolate centers
     deltacp = cp_vector(delta, rec_count);
-    max = maxvector(rho, rec_count);
-    max = max*0.1;
+    argmax = argmaxvector(rho, rec_count);
+    max = rho[argmax]*0.1;
 
+    pmean = mean(deltacp, rec_count);
     for(i=0; i<rec_count; i++)
     {
         if (rho[i] < max)
-            deltacp[i] = 0;
+            deltacp[i] = pmean;
     }
+
+    argmax = argmaxvector(deltacp, rec_count);
+    max = deltacp[argmax];
+
+    deltacp[argmax] = 0;
+
     //least squares over deltacp and the centers are points over sd+least square
     // least_square y=m*x+b
     least_squares(rho, deltacp, rec_count, &m, &b, &sd);
@@ -504,14 +537,17 @@ void get_centers(double* rho, double *delta, double* centers, int rec_count)
     for(i=0; i<rec_count; i++)
         ajuste[i] = m*rho[i] + b;
 
+    deltacp[argmax] = max;
+
     for(i=0; i<rec_count; i++)
     {
-        if(deltacp[i] > ajuste[i] + 1.4*sd)
+        if(deltacp[i] > ajuste[i] + 2*sd)
         {
             centers[0]++;
             centers[(int)centers[0]] = i;
         }
     }
+    printf("cant centers: %lf\n", centers[0]);
     free(deltacp);
     free(ajuste);
 }
@@ -646,19 +682,19 @@ int assignation(double* rho, double* nneigh, float* distances, float dc, double*
             {
                 if ((labels[i]!=labels[j]) && (distances[i*n+j] <= dc))
                 {
-//                    rho_average = (rho[i]+rho[j])/2.0;
-//                    if (rho_average > bord_rho[(int)labels[i]])
-//                        bord_rho[(int)labels[i]] = rho_average;
-//                    if (rho_average > bord_rho[(int)labels[j]])
-//                        bord_rho[(int)labels[j]] = rho_average;
-                    if (rho[i] > bord_rho[(int)labels[i]])
-                    {
-                        bord_rho[(int)labels[i]] = rho[i];
-                    }
-                    if (rho[j] > bord_rho[(int)labels[j]])
-                    {
-                        bord_rho[(int)labels[j]] = rho[j];
-                    }
+                    rho_average = (rho[i]+rho[j])/2.0;
+                    if (rho_average > bord_rho[(int)labels[i]])
+                        bord_rho[(int)labels[i]] = rho_average;
+                    if (rho_average > bord_rho[(int)labels[j]])
+                        bord_rho[(int)labels[j]] = rho_average;
+//                    if (rho[i] > bord_rho[(int)labels[i]])
+//                    {
+//                        bord_rho[(int)labels[i]] = rho[i];
+//                    }
+//                    if (rho[j] > bord_rho[(int)labels[j]])
+//                    {
+//                        bord_rho[(int)labels[j]] = rho[j];
+//                    }
                 }
             }
         }
@@ -804,23 +840,13 @@ int main()
                             132692, 137758, 135788, 133059, 137856, 133315, 136367, 134389, 133261, 136265,
                             134845, 133291, 130855, 134645, 133107, 136139, 137656, 137249, 132297, 135167 };
 
-    double features[] = {   28,    51,    61,    69,   109,   144,   188,   196,   210,   211,
-                            226,   238,   244,   292,   293,   309,   359,   360,   386,   391,
-                            476,   515,   521,   560,   567,   621,   631,   646,   654,   664,
-                            673,   685,   697,   720,   724,   743,   772,   774,   775,   776,
-                            783,   839,   872,   885,   888,   891,   994,  1035,  1046,  1067,
-                            1098,  1116,  1135,  1192,  1196,  1222,  1244,  1324,  1338,  1377,
-                            1394,  1431,  1461,  1471,  1479,  1517,  1519,  1559,  1585,  1642,
-                            1645,  1679,  1702,  1763,  1795,  1819,  1846,  1882,  1893,  1896,
-                            1904,  1932,  1954,  1966,  1985,  2004,  2010,  2012,  2021,  2077,
-                            2085,  2116,  2141,  2158,  2161,  2188,  2225,  2347,  2349,  2401,
-                            2403,  2413,  2442,  2447,  2482,  2501,  2543,  2552,  2561,  2569,
-                            2579,  2598,  2635,  2712,  2803,  2804,  2825,  2867,  2916,  2987,
-                            2993,  3038};
+    double features[] = {   23658, 23659, 23660, 23661, 23662, 23663, 23664, 23665, 23666,
+                            23667, 23668, 23669, 23670, 23671, 23672, 23673, 23674, 23675,
+                            23676, 23677, 23678};
 
     int nspikes = 331;
-    nspikes = 122;
-    int points = 6;
+    nspikes = 21;
+    int points = 10;
     float dc;
     double* local_density = (double*)calloc(nspikes,sizeof(double));
     double* distance_to_higher_density = (double*)calloc(nspikes,sizeof(double));
@@ -829,7 +855,8 @@ int main()
     double* clusters = (double*)calloc(nspikes,sizeof(double));
     char connect[100] = "dbname=demo host=172.16.162.128 user=postgres password=postgres";
 
-    dc = get_dc(connect, id_spike, nspikes, 1.8, points);
+    dc = getDC(connect, features, local_density, nspikes, 1.8, points);
+    //dc = get_dc(connect, id_spike, nspikes, 1.8, points);
 
     //cluster_dp(connect, local_density, distance_to_higher_density, id_spike, clusters,
     //           nneigh, centers, dc, 6, nspikes, "gaussian");

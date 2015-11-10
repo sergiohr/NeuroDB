@@ -12,7 +12,7 @@ import numpy as np
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import db
-
+import scipy.signal as signal
 
 
 
@@ -25,7 +25,13 @@ def updateChannelFeatures(id_block, channel):
     mspikes = []
     
     for spike in spikes:
-        mspikes.append(spike.waveform)
+        #mspikes.append(spike.waveform)
+        max = spike.waveform.max()
+        spike.waveform = spike.waveform/max
+        
+        a = np.copy(spike.waveform)
+        d = signal.convolve(a,a*a)
+        mspikes.append((spike.waveform - np.mean(spike.waveform, 0)) / np.std(spike.waveform, 0))
     mspikes = np.array(mspikes)
     
     if mspikes == []:
