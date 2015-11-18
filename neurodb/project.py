@@ -232,8 +232,9 @@ class Project(object):
             
             an.save(self.connection)
             
+        
             neurodb.project.save_channel_spikes(id_block=id_session, channel=nchannels)
-            neurodb.project.update_spike_coordenates(id_block=id_session, channel=nchannels)
+            #neurodb.project.update_spike_coordenates(id_block=id_session, channel=nchannels)
             
         
         return id_session
@@ -372,7 +373,7 @@ def save_channel_spikes(id_block, channel):
                                                    recordingchannel = channel, 
                                                    id_block = id_block,
                                                    t_start = t_spike)
-            #[(id_seg_ansig, _)] = neodb.get_id(NDB, "analogsignal", )
+            
             spike = neodb.core.SpikeDB(id_segment = segment.id_segment, 
                                        id_recordingchannel = segment.id_recordingchannel,
                                        waveform = spikes[i],

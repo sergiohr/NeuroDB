@@ -268,10 +268,10 @@ if __name__ == '__main__':
     connect = "dbname=demo host=172.16.162.128 user=postgres password=postgres"
     id_project = 19
     #id_session = "78" # easy1 + easy2 + easy3
-    id_session = "80"
+    id_session = "84"
     channel = "1"
-    points = 3
-    n_nodos = 12
+    points = 6
+    n_nodos = 8
     
     if db.NDB == None:
         db.connect()

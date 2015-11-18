@@ -31,7 +31,7 @@ class Detector():
                          w_pre = 20,
                          w_post = 44,
                          detection = 'pos',
-                         stdmin = 6.00,
+                         stdmin = 5.00,
                          stdmax = 50,
                          interpolation = 'y',
                          int_factor = 2,
@@ -39,7 +39,7 @@ class Detector():
                          fmax_detect = 3000,
                          fmin_sort = 300,
                          fmax_sort = 3000,
-                         sr = 14400,
+                         sr = 14400,#sr = 14400
                          min_ref_per = 1.5,
                          cluster_linux_dir = '/home/sergio/iibm/workspace2/NeuroDB/src/NeuroDB/signalProcessor'
                        ):
@@ -191,11 +191,11 @@ class Detector():
 if __name__ == '__main__':
     
     #x = scipy.io.loadmat('/home/sergio/matlab/extra/NeuroCube/mat/sims/Spikesim.mat')
-    x = scipy.io.loadmat('/home/sergio/Proyectos/sandbox/signal.mat')
+    x = scipy.io.loadmat('/home/sergio/iibm/wave_clus_2.0wb/Simulator/test/testspikes.mat')
     x = x['data'][0]
     
     det = Detector()
-    det.set_parameters(sr=int(24000), stdmin=6)
+    det.set_parameters(sr=int(32258))
     spikes, index, thr = det.get_spikes(x)
     
     for i in range(len(spikes)):
