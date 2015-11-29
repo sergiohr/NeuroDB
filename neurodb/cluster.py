@@ -21,35 +21,122 @@ import db
 import multiprocessing as mp
 import neurodb.features
 from sklearn.decomposition import PCA
+from mpl_toolkits.mplot3d import Axes3D
 
 output = mp.Queue()
 
+def compare_array(a, b):
+    for i in range(len(a)):
+        if a[i] != b[i]:
+            print a[i], b[i]
+            return False
+    print "iguales"
+    return True
+
+def show_features(nodo, index):
+    username = 'postgres'
+    password = 'postgres'
+    host = '172.16.162.128'
+    dbname = 'demo'
+    
+    connection = psycopg2.connect('dbname=%s user=%s password=%s host=%s'%(dbname, username, password, host))
+    cursor = connection.cursor()
+    
+    qcolor = ['red', 'blue', 'green', 'black', 'yellow', 'white']
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    for k in np.unique(index):
+        subnodo = []
+        for q in range(len(nodo)):
+            if index[q] == k:
+                subnodo.append(nodo[q])
+        
+        query = """select p1, p2, p3 from features where """
+        condition = ""
+        for f in subnodo:
+            condition = condition + "id=%s or "%(f)
+        condition = condition[:len(condition)-5]
+        query = query + condition
+        
+        cursor.execute(query)
+        results = cursor.fetchall()
+        
+        x = []
+        y = []
+        z = []
+        
+        for i in results:
+            x.append(i[0])
+            y.append(i[1])
+            z.append(i[2])
+        
+        ax.scatter(x, y, z, color=qcolor[int(k)])
+        
+        ax.set_xlabel('X Label')
+        ax.set_ylabel('Y Label')
+        ax.set_zlabel('Z Label')
+    
+    plt.show()
 
 
-def get_centers(connect, nodo, points):
-    centersT = []
+def ajuste(local_density, coeficientes):
+    vajuste = np.zeros(len(local_density))
+    for j in range(len(local_density)):
+        vajuste[j] = np.polynomial.polynomial.polyval(local_density[j], coeficientes)
+        
+    return vajuste
+
+def show_selection(rho, delta):
+    n = len(rho)
     
-    spikes_id = np.array(nodo, np.float64)
-    nspikes = len(spikes_id)
+    max = rho.max()
+    max = int(max*0.1)
+    deltacp = np.copy(delta)
     
-    local_density = np.empty(nspikes)
-    distance_to_higher_density = np.empty(nspikes)
-    cluster_index = np.empty(nspikes)
-    nneigh = np.empty(nspikes)
-    centers = np.empty(nspikes)
+    #pmean = deltacp.mean()
+    pmean = 0
+    for i in delta:
+        pmean = pmean + i
+    pmean = pmean/n;
     
-    dc = libcd.get_dc(connect, spikes_id, nspikes, np.float(1.8), points)
-    libcd.cluster_dp(connect, local_density, distance_to_higher_density, spikes_id, 
-                     cluster_index, nneigh, centers, dc, points, nspikes, "gaussian")
+    print "mean:", pmean
+    for j in range(len(deltacp)):
+        if (rho[j] < max):
+            deltacp[j] = pmean
     
-    print "nodo procesado. ncenters:%s"%(int(centers[0]))
+    argmax = deltacp.argmax()
+    max = deltacp[argmax]
     
-    ncenters = centers[0]
+    deltacp[argmax] = max/2
     
-    for j in range(int(centers[0])):
-        centersT.append([local_density[int(centers[j+1])], distance_to_higher_density[int(centers[j+1])]])
+    coeficientes1, stats1= np.polynomial.polynomial.polyfit(rho, deltacp, 1, full=True)
     
-    return centersT, ncenters, cluster_index
+    vajuste = np.zeros(len(rho))
+    for j in range(len(rho)):
+        vajuste[j] = np.polynomial.polynomial.polyval(rho[j], coeficientes1)
+    ajuste1 = vajuste
+    desvio1 = (stats1[0][0]/float(n))**0.5
+    
+    deltacp[argmax] = max;
+    
+    print "ajuste1: m:%s b:%s sd:%s"%(coeficientes1[1], coeficientes1[0], desvio1)
+    
+    deltacp = np.copy(delta)
+    y1 = deltacp[rho.argmin()]
+    x1 = rho.min()
+    y2 = 0
+    x2 = rho.max()*0.1
+
+    coeficientes1 = [-x1*(y2-y1)/(x2-x1) + y1,(y2-y1)/(x2-x1)]
+    ajuste2 = ajuste(rho, coeficientes1)
+    
+    print "ajuste2: m:%s b:%s sd:%s"%(coeficientes1[1], coeficientes1[0], desvio1)
+    
+    plt.plot(rho, deltacp, 'bo')
+    plt.plot(rho, ajuste1, 'r')
+    plt.plot(rho, ajuste1 + 2.5*desvio1, 'g')
+    plt.plot(rho, ajuste2 + 2.5*desvio1, 'g')
+    plt.show()
 
 
 class DPClustering():
@@ -74,6 +161,10 @@ class DPClustering():
             if self.threading == "serial":
                 if self.nnodos == 1:
                     spike_ids, labels = self.__process_serial(spike_ids)
+                    #Lo que entra no es lo que sale de esta funcion, corregir
+                    
+                    
+                    
                     return labels
                 else:
                     results = self.__process_serial(spike_ids)
@@ -96,6 +187,8 @@ class DPClustering():
             cluster_index = np.empty(len(features_ids))
             dc = libcd.getDC(connect, features_ids, id_spikes, len(features_ids), np.float(2.0), self.points)
             libcd.dpClustering(features_ids, len(features_ids), dc, self.points, "gaussian", id_spikes, cluster_index, rho, delta)
+            show_selection(rho, delta)
+            show_features(features_ids, np.ones(len(features_ids)))
             # Cuando se hace una consulta a la base no se devuelve los ids ordenados segun la consulta
             
         spikes = neurodb.features.getFromDB(features_id=features_ids, column='extra')
@@ -165,7 +258,7 @@ class DPClustering():
         
         results = []
         if (self.nnodos == 1):
-            spikes_id, labels = self.__clustering(nodos[0], self.points, output)
+            spikes_id, labels = self.__clustering(spikes, self.points, output)
             return spikes_id, labels
             
         for nodo in nodos:
@@ -202,9 +295,11 @@ class DPClustering():
         cluster_index = np.empty(nspikes)
         features = neurodb.features.getFeaturesFromSpikes(nodo, connection=dbconn)
         
-        dc = libcd.getDC(connect, features, spikes_id, nspikes, np.float(1.8), points)
         
+        dc = libcd.getDC(connect, features, spikes_id, nspikes, np.float(1.8), points)
         libcd.dpClustering(features, nspikes, dc, points, "gaussian", spikes_id, cluster_index, rho, delta)
+        #show_selection(rho, delta)
+        #show_features(features, cluster_index)
         
         if (self.nnodos == 1):
             return spikes_id, cluster_index
@@ -267,11 +362,11 @@ class DPClustering():
 if __name__ == '__main__':
     connect = "dbname=demo host=172.16.162.128 user=postgres password=postgres"
     id_project = 19
-    #id_session = "78" # easy1 + easy2 + easy3
-    id_session = "84"
+    #id_session = "84" #5768 spikes
+    id_session = "85" #2800 spikes
     channel = "1"
-    points = 6
-    n_nodos = 8
+    points = 3
+    n_nodos = 15
     
     if db.NDB == None:
         db.connect()
@@ -295,11 +390,11 @@ if __name__ == '__main__':
     np.set_printoptions(threshold=np.nan)
     dp = DPClustering(points=points, percentage_dc=2, kernel="gaussian", threading = "serial", nnodos = n_nodos)
     labels = dp.fitSpikes(spikes)
-    print labels
+    #print labels
     for i in range(0, int(labels.max())+1):
         count = 0
         template = np.zeros(64, np.float64)
-        #plt.subplot(int(labels.max())+1,1,i+1)
+        plt.subplot(1,int(labels.max())+1,i+1)
         for j in range(len(spikes)):    
             if labels[j] == i:
                 spike = neurodb.neodb.core.spikedb.get_from_db(db.NDB, id = int(spikes[j]))
@@ -307,8 +402,10 @@ if __name__ == '__main__':
                 template = template + signal
                 plt.plot(signal, 'b')
                 count = count + 1
-        plt.plot(template/count, 'r')
-        plt.title(str(i) + " " + str(count))
-        plt.show()
+        if count != 0:
+            plt.plot(template/count, 'r')
+        plt.title("Cluster " + str(i) + ": # " + str(count))
+        
+    plt.show()
     
     pass

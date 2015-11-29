@@ -67,14 +67,20 @@ def getFeaturesFromSpikes(spikes, connection=None):
         p = p + " id_spike=%s or"%(i)
     p = p[:len(p)-3]
     
-    query = "SELECT id from FEATURES WHERE" + p
+    query = "SELECT id, id_spike from FEATURES WHERE" + p
     
     cursor.execute(query)
     
     results = cursor.fetchall()
-    results = [x[0] for x in results]
-        
-    return np.array(results, np.float64)
+    #results = [x[0] for x in results]
+    out = []
+    
+    for i in spikes:
+        for j in range(len(results)):
+            if i == results[j][1]:
+                out.append(results[j][0])
+    
+    return np.array(out, np.float64)
 
 
 def getFromDB(features_id, column):
@@ -95,11 +101,17 @@ def getFromDB(features_id, column):
     
     cursor.execute(query)
     results = cursor.fetchall()
+    out = []
     
     if column == 'extra':
         results = [(x[0],np.frombuffer(x[1], np.float32)) for x in results]
     
-    return results
+    for i in features_id:
+        for j in range(len(results)):
+            if i == results[j][0]:
+                out.append(results[j])
+    
+    return out
 
 def removeOnDB(features_id):
     

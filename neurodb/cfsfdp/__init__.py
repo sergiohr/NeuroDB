@@ -15,10 +15,6 @@ array_2d_double = npct.ndpointer(dtype=np.double, ndim=2, flags='CONTIGUOUS')
 
 libcd = npct.load_library("cfsfdp", "/home/sergio/Proyectos/NeuroDB/NeuroDB/neurodb/cfsfdp")
 
-libcd.get_dc.argtypes = [ctypes.c_char_p, array_1d_double, ctypes.c_int,
-                         ctypes.c_float, ctypes.c_int]
-libcd.get_dc.restype = ctypes.c_float
-
 libcd.get_distance_to_higher_density.argtypes = [array_1d_double, ctypes.c_int, array_1d_double, 
                                                  array_1d_double, array_1d_double]
 libcd.get_distance_to_higher_density.restype = ctypes.c_int
@@ -26,16 +22,6 @@ libcd.get_distance_to_higher_density.restype = ctypes.c_int
 libcd.get_local_density.argtypes = [array_1d_double, ctypes.c_int, ctypes.c_float, 
                                     array_1d_double, ctypes.c_char_p]
 libcd.get_local_density.restype = ctypes.c_int
-
-libcd.cluster_dp.argtypes = [ctypes.c_char_p, array_1d_double, array_1d_double, 
-                             array_1d_double, array_1d_double, array_1d_double, 
-                             array_1d_double, ctypes.c_float, ctypes.c_int, 
-                             ctypes.c_int, ctypes.c_char_p]
-libcd.cluster_dp.restype = ctypes.c_int
-
-libcd.dp.argtypes = [array_1d_double, array_1d_double, ctypes.c_int, 
-                     array_1d_double, array_1d_double, ctypes.c_char_p]
-libcd.dp.restype = ctypes.c_int
 
 libcd.dpClustering.argtypes = [array_1d_double, ctypes.c_int, ctypes.c_float, 
                                ctypes.c_int, ctypes.c_char_p, array_1d_double, 
