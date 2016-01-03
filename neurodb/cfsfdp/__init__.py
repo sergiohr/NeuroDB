@@ -25,7 +25,7 @@ libcd.get_local_density.restype = ctypes.c_int
 
 libcd.dpClustering.argtypes = [array_1d_double, ctypes.c_int, ctypes.c_float, 
                                ctypes.c_int, ctypes.c_char_p, array_1d_double, 
-                               array_1d_double, array_1d_double, array_1d_double]
+                               array_1d_double, array_1d_double, array_1d_double, ctypes.c_float]
 libcd.dpClustering.restype = ctypes.c_int
 
 libcd.getDC.argtypes = [ctypes.c_char_p, array_1d_double, array_1d_double, ctypes.c_int,

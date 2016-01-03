@@ -22,7 +22,8 @@ from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import db
 import scipy.io
-
+import psycopg2
+import multiprocessing as mp
 
 class Project(object):
     '''
@@ -233,7 +234,8 @@ class Project(object):
             an.save(self.connection)
             
         
-            neurodb.project.save_channel_spikes(id_block=id_session, channel=nchannels)
+           # neurodb.project.save_channel_spikes(id_block=id_session, channel=nchannels)
+            neurodb.project.save_channel_spikes_multi(id_block=id_session, channel=nchannels)
             #neurodb.project.update_spike_coordenates(id_block=id_session, channel=nchannels)
             
         
@@ -381,7 +383,65 @@ def save_channel_spikes(id_block, channel):
                                        index = index[i],
                                        sampling_rate = segment.sampling_rate)
             id_spike = spike.save(db.NDB)
-            
+    #TODO: returns of the function neurodb.save_channel_spikes
+
+def save_channel_spikes_multi(id_block, channel):
+
+    if db.NDB == None:
+        db.connect()
+    
+    ansig = neodb.core.analogsignaldb.get_from_db3(db.NDB, 
+                                                   recordingchannel = channel, 
+                                                   id_block = id_block)
+    if len(ansig) != 0:
+        ndbdetector = Spike.Detector()
+        ndbdetector.set_parameters(sr=int(ansig.sampling_rate))
+        spikes, index, thr = ndbdetector.get_spikes(ansig)
+        
+        t_spike = index[0]/float(ansig.sampling_rate)
+        segment = neodb.core.analogsignaldb.get_from_db3(db.NDB, 
+                                               recordingchannel = channel, 
+                                               id_block = id_block,
+                                               t_start = t_spike)
+        
+        process = []
+        n = len(spikes)
+        print "spikes:",n
+        
+        nn = int(n/10)
+        
+        for i in range(9):
+            process.append(mp.Process(target=__saveSpikes, args=(spikes[i*nn:i*nn+nn-1], index[i*nn:i*nn+nn-1], channel, id_block, segment, ansig.sampling_rate)))
+        
+        process.append(mp.Process(target=__saveSpikes, args=(spikes[9*nn:len(spikes)-1], index[9*nn:len(spikes)-1], channel, id_block, segment, ansig.sampling_rate)))
+        
+        
+        for p in process:
+            p.start()
+     
+        for p in process:
+            p.join(7200)
+
+
+def __saveSpikes(spikes, index, channel, id_block, segment, sr):
+    username = 'postgres'
+    password = 'postgres'
+    host = '172.16.162.128'
+    dbname = 'demo'
+    url = 'postgresql://%s:%s@%s/%s'%(username, password, host, dbname)
+    dbconn = psycopg2.connect('dbname=%s user=%s password=%s host=%s'%(dbname, username, password, host))    
+    
+    for i in range(len(spikes)):
+        t_spike = index[i]/float(sr)
+        
+        spike = neodb.core.SpikeDB(id_segment = segment.id_segment, 
+                                   id_recordingchannel = segment.id_recordingchannel,
+                                   waveform = spikes[i],
+                                   time = t_spike,
+                                   index = index[i],
+                                   sampling_rate = segment.sampling_rate)
+        id_spike = spike.save(dbconn)
+    
     #TODO: returns of the function neurodb.save_channel_spikes
 
 def get_clusters(id_block, channel, method, save=None):

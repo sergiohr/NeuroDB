@@ -450,7 +450,7 @@ int get_distance_to_higher_density(float* distances, int rec_count, double* rho,
 }
 
 
-void get_centers(double* rho, double *delta, double* centers, int rec_count)
+void get_centers(double* rho, double *delta, double* centers, int rec_count, float fsd)
 {
     double *deltacp;
     double max, min;
@@ -511,13 +511,12 @@ void get_centers(double* rho, double *delta, double* centers, int rec_count)
     // get centers
     for(i=0; i<rec_count; i++)
     {
-        if((delta[i] > ajuste[i] + 2.5*sd) && (delta[i] > ajuste2[i] + 2.5*sd))
+        if((delta[i] > ajuste[i] + fsd*sd) && (delta[i] > ajuste2[i] + fsd*sd))
         {
             centers[0]++;
             centers[(int)centers[0]] = i;
         }
     }
-    printf("cant centers: %lf\n", centers[0]);
     free(deltacp);
     free(ajuste);
     free(ajuste2);
@@ -542,7 +541,9 @@ int assignation(double* rho, double* nneigh, float* distances, float dc, double*
     for(i=1; i<centers[0]+1; i++)
     {
         labels[(int)centers[i]] = i;
+        //printf("%d,%d ", (int)centers[i],i);
     }
+    //printf("\n");
 
     ordrho = cp_vector(rho, n);
     Quicksort(ordrho, ordrho_index, 0, n-1);
@@ -591,17 +592,19 @@ int assignation(double* rho, double* nneigh, float* distances, float dc, double*
 }
 
 
-int dpClustering(double* spikeFeatures, int n, float dc, int points, char kernel[20], double* id_spike, double* labels, double* rho, double* delta)
+int dpClustering(double* spikeFeatures, int n, float dc, int points, char kernel[20], double* id_spike, double* labels, double* rho, double* delta, float smod)
 {
     float *distances;
     double* nneigh= (double*)calloc(n, sizeof(double));
     double* centers = (double*)calloc(n, sizeof(double));
+    int i;
 
     distances = featuresDistances(spikeFeatures, id_spike, n, points); //se reordena spikeFeatures, id_spike porque la query a la base devuelve en otro orden
     get_local_density(distances, n, dc, rho, kernel);
     get_distance_to_higher_density(distances, n, rho, delta, nneigh);
 
-    get_centers(rho, delta, centers, n);
+    get_centers(rho, delta, centers, n, smod);
+    //printf("%lf %lf %lf\n", centers[1], centers[2], centers[3]);
 
     assignation(rho, nneigh, distances, dc, labels, n, centers);
 

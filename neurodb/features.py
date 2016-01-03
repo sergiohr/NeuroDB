@@ -28,7 +28,7 @@ def updateChannelFeatures(id_block, channel):
         #mspikes.append(spike.waveform)
         #max = spike.waveform.max()
         #spike.waveform = spike.waveform/max
-        spike.waveform = np.convolve(spike.waveform, np.ones((10,))/10, mode='same')
+        #spike.waveform = np.convolve(spike.waveform, np.ones((10,))/10, mode='same')
         mspikes.append((spike.waveform - np.mean(spike.waveform, 0)) / np.std(spike.waveform, 0))
     mspikes = np.array(mspikes)
     

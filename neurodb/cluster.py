@@ -33,7 +33,7 @@ def compare_array(a, b):
     print "iguales"
     return True
 
-def show_features(nodo, index):
+def show_features(nodo, index, centers = None):
     username = 'postgres'
     password = 'postgres'
     host = '172.16.162.128'
@@ -76,6 +76,30 @@ def show_features(nodo, index):
         ax.set_ylabel('Y Label')
         ax.set_zlabel('Z Label')
     
+    if centers != None:
+        qcolor = ['red', 'blue', 'green', 'black', 'yellow', 'white']
+        k = 0
+        for c in centers:
+            
+            query = """select p1, p2, p3 from features where id=%s"""%(nodo[c])
+            cursor.execute(query)
+            results = cursor.fetchall()
+            
+            x = []
+            y = []
+            z = []
+            
+            #for i in range(len(results)):
+            x.append(results[0][0])
+            y.append(results[0][1])
+            z.append(results[0][2])
+            
+            #print "c:%s p1:%s p2:%s p3:%s"%(nodo[c], results[0][0], results[0][1], results[0][2])
+                
+            ax.scatter(x, y, z, s=200, marker='o', color=qcolor[k])
+            ax.text(results[0][0],results[0][1],results[0][2],str(c))
+            k=k+1
+    
     plt.show()
 
 
@@ -86,7 +110,7 @@ def ajuste(local_density, coeficientes):
         
     return vajuste
 
-def show_selection(rho, delta):
+def show_selection(rho, delta, plot = True):
     n = len(rho)
     
     max = rho.max()
@@ -99,7 +123,7 @@ def show_selection(rho, delta):
         pmean = pmean + i
     pmean = pmean/n;
     
-    print "mean:", pmean
+    #print "mean:", pmean
     for j in range(len(deltacp)):
         if (rho[j] < max):
             deltacp[j] = pmean
@@ -119,7 +143,7 @@ def show_selection(rho, delta):
     
     deltacp[argmax] = max;
     
-    print "ajuste1: m:%s b:%s sd:%s"%(coeficientes1[1], coeficientes1[0], desvio1)
+    #print "ajuste1: m:%s b:%s sd:%s"%(coeficientes1[1], coeficientes1[0], desvio1)
     
     deltacp = np.copy(delta)
     y1 = deltacp[rho.argmin()]
@@ -130,19 +154,28 @@ def show_selection(rho, delta):
     coeficientes1 = [-x1*(y2-y1)/(x2-x1) + y1,(y2-y1)/(x2-x1)]
     ajuste2 = ajuste(rho, coeficientes1)
     
-    print "ajuste2: m:%s b:%s sd:%s"%(coeficientes1[1], coeficientes1[0], desvio1)
+    #print "ajuste2: m:%s b:%s sd:%s"%(coeficientes1[1], coeficientes1[0], desvio1)
     
-    plt.plot(rho, deltacp, 'bo')
-    plt.plot(rho, ajuste1, 'r')
-    plt.plot(rho, ajuste1 + 2.5*desvio1, 'g')
-    plt.plot(rho, ajuste2 + 2.5*desvio1, 'g')
-    plt.show()
-
+    centers = []
+    for i in range(len(rho)):
+        if((delta[i] > ajuste1[i] + 2*desvio1) and (delta[i] > ajuste2[i] + 2*desvio1)):
+            centers.append(i)
+    
+    if plot:
+        plt.plot(rho, deltacp, 'bo')
+        plt.plot(rho, ajuste1, 'r')
+        plt.plot(rho, ajuste1 + 2*desvio1, 'g')
+        plt.plot(rho, ajuste2 + 2*desvio1, 'g')
+        plt.show()
+    
+    return centers
 
 class DPClustering():
     def __init__(self, points=3, percentage_dc=1.8, kernel="gaussian", threading = "multi", nnodos = 4):
         if threading not in ["multi", "serial"]:
             raise StandardError("""Parameter threading must be contains 'multi' or 'serial'.""")
+        
+        self.connect = "dbname=demo host=172.16.162.128 user=postgres password=postgres"
         
         self.threading = threading
         self.points = points
@@ -175,6 +208,8 @@ class DPClustering():
             for x in results:
                 templates.append(x[0])
                 ids.append(x[1])
+            
+            smod = np.float(2)
              
             features_ids = self.__insertFeaturesTemplate(templates, ids)
             
@@ -185,12 +220,12 @@ class DPClustering():
             delta = np.empty(nspikes)
             id_spikes = np.empty(nspikes)
             cluster_index = np.empty(len(features_ids))
-            dc = libcd.getDC(connect, features_ids, id_spikes, len(features_ids), np.float(2.0), self.points)
-            libcd.dpClustering(features_ids, len(features_ids), dc, self.points, "gaussian", id_spikes, cluster_index, rho, delta)
-            show_selection(rho, delta)
-            show_features(features_ids, np.ones(len(features_ids)))
+            dc = libcd.getDC(self.connect, features_ids, id_spikes, len(features_ids), np.float(2.0), self.points)
+            libcd.dpClustering(features_ids, len(features_ids), dc, self.points, "gaussian", id_spikes, cluster_index, rho, delta, smod)
+            #cent = show_selection(rho, delta, plot=False)
+            #show_features(features_ids, np.ones(len(features_ids)), cent)
             # Cuando se hace una consulta a la base no se devuelve los ids ordenados segun la consulta
-            
+        
         spikes = neurodb.features.getFromDB(features_id=features_ids, column='extra')
         
         labels = []
@@ -204,6 +239,7 @@ class DPClustering():
                 labels.append(0)
         
         neurodb.features.removeOnDB(features_id=features_ids)
+        self.__saveLabelsMulti(spike_ids, labels)
         return np.array(labels)
     
     def __select_nodes(self, spikes):
@@ -239,15 +275,15 @@ class DPClustering():
         for p in process:
             p.start()
      
-        for p in process:
-            p.join(0.5)
-        
         results = [output.get() for p in process]
         
         out=[]
         for r in results:
             for t in r:
                 out.append(t)
+        
+        for p in process:
+            p.join()
         
         return out
     
@@ -281,6 +317,7 @@ class DPClustering():
         dbname = 'demo'
         url = 'postgresql://%s:%s@%s/%s'%(username, password, host, dbname)
         dbconn = psycopg2.connect('dbname=%s user=%s password=%s host=%s'%(dbname, username, password, host))
+        smod = np.float(2.5)
         
         connect = "dbname=demo host=172.16.162.128 user=postgres password=postgres"
         spikes_id = np.array(nodo, np.float64)
@@ -297,7 +334,9 @@ class DPClustering():
         
         
         dc = libcd.getDC(connect, features, spikes_id, nspikes, np.float(1.8), points)
-        libcd.dpClustering(features, nspikes, dc, points, "gaussian", spikes_id, cluster_index, rho, delta)
+        libcd.dpClustering(features, nspikes, dc, points, "gaussian", spikes_id, cluster_index, rho, delta, smod)
+        #plt.plot(delta[rho.argsort()])
+        #plt.show()
         #show_selection(rho, delta)
         #show_features(features, cluster_index)
         
@@ -358,15 +397,49 @@ class DPClustering():
         dbconn.commit()
         
         return ids
+    
+    def __saveLabelsMulti(self, spikes, labels):
+        
+        process = []
+        nn = int(len(spikes)/10)
+        
+        for i in range(9):
+            #print i*nn,i*nn+nn-1
+            process.append(mp.Process(target=self.__saveLabels, args=(spikes[i*nn:i*nn+nn-1], labels[i*nn:i*nn+nn-1])))
+        
+        #print 9*nn,len(spikes)-1
+        process.append(mp.Process(target=self.__saveLabels, args=(spikes[9*nn:len(spikes)-1], labels[9*nn:len(spikes)-1])))
+        
+        for p in process:
+            p.start()
+     
+        for p in process:
+            p.join()
+        
+    
+    def __saveLabels(self, spikes, labels):
+        username = 'postgres'
+        password = 'postgres'
+        host = '172.16.162.128'
+        dbname = 'demo'
+        dbconn = psycopg2.connect('dbname=%s user=%s password=%s host=%s'%(dbname, username, password, host))
+        cursor = dbconn.cursor()
+        
+        for i in range(len(spikes)):
+            query = "UPDATE features SET label=%s where id_spike=%s"%(labels[i],spikes[i])
+            cursor.execute(query)
+        
+        dbconn.commit()
         
 if __name__ == '__main__':
     connect = "dbname=demo host=172.16.162.128 user=postgres password=postgres"
     id_project = 19
     #id_session = "84" #5768 spikes
-    id_session = "85" #2800 spikes
+    id_session = "94" #74394 spikes
+    #id_session = "98" #2800 spikes
     channel = "1"
     points = 3
-    n_nodos = 15
+    n_nodos = 30
     
     if db.NDB == None:
         db.connect()
@@ -388,24 +461,25 @@ if __name__ == '__main__':
     spikes = rc.get_spikes()
     
     np.set_printoptions(threshold=np.nan)
-    dp = DPClustering(points=points, percentage_dc=2, kernel="gaussian", threading = "serial", nnodos = n_nodos)
+    dp = DPClustering(points=points, percentage_dc=2, kernel="gaussian", threading = "multi", nnodos = n_nodos)
     labels = dp.fitSpikes(spikes)
-    #print labels
-    for i in range(0, int(labels.max())+1):
-        count = 0
-        template = np.zeros(64, np.float64)
-        plt.subplot(1,int(labels.max())+1,i+1)
-        for j in range(len(spikes)):    
-            if labels[j] == i:
-                spike = neurodb.neodb.core.spikedb.get_from_db(db.NDB, id = int(spikes[j]))
-                signal = spike[0].waveform
-                template = template + signal
-                plt.plot(signal, 'b')
-                count = count + 1
-        if count != 0:
-            plt.plot(template/count, 'r')
-        plt.title("Cluster " + str(i) + ": # " + str(count))
-        
-    plt.show()
     
-    pass
+    #print labels
+#     for i in range(0, int(labels.max())+1):
+#         count = 0
+#         template = np.zeros(64, np.float64)
+#         plt.subplot(1,int(labels.max())+1,i+1)
+#         for j in range(len(spikes)):    
+#             if labels[j] == i:
+#                 spike = neurodb.neodb.core.spikedb.get_from_db(db.NDB, id = int(spikes[j]))
+#                 signal = spike[0].waveform
+#                 template = template + signal
+#                 plt.plot(signal, 'b')
+#                 count = count + 1
+#         if count != 0:
+#             plt.plot(template/count, 'r')
+#         plt.title("Cluster " + str(i) + ": # " + str(count))
+#          
+#     plt.show()
+#     
+#     pass
