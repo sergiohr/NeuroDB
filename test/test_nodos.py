@@ -177,7 +177,7 @@ if __name__ == '__main__':
     #id_block = "76"
     channel = "1"
     points = 3
-    nnodos = 50
+    nnodos = 1
     
     nodos = select_nodes_r(project, id_block, channel, nnodos)
     

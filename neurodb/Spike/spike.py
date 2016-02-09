@@ -128,6 +128,7 @@ class Detector():
         thrmax = self.stdmax * noise_std_sorted     #thrmax for artifact removal is based on sorted settings.
         
         # LOCATE SPIKE TIMES
+        # Detect POSITIVE PEAKS
         nspk = 0;
         xaux = np.argwhere(xf_detect[self.w_pre+1:len(xf_detect)-self.w_post-1-1] > thr) + self.w_pre + 1
         xaux = np.resize(xaux,len(xaux)) #position of the peaks
@@ -149,27 +150,6 @@ class Detector():
         for i in range(nspk):                          # Eliminates artifacts
             if np.max( np.abs( xf[index[i]-self.w_pre:index[i]+self.w_post] )) < thrmax :
                 spikes[i,:] = xf[index[i]-self.w_pre-1:index[i]+self.w_post+3]
-        
-#         ######################
-#         i = 0
-#         while( i < nspk-1 ):
-#             ######## Eliminates artifacts
-#             peak = index[i]
-#             p = index[i+1]
-#             
-#             max1 = np.max( np.abs( xf[peak-self.w_pre:peak+self.w_post] ))
-#             max2 = np.max( np.abs( xf[p-self.w_pre:p+self.w_post] ))
-#             
-#             if max1 < thrmax:
-#                 if p < (peak + self.w_post+3) and max2 < thrmax:
-#                     i = i + 1
-#                 else:
-#                     spikes[i,:] = xf[index[i]-self.w_pre-1:index[i]+self.w_post+3]
-#             
-#             i = i + 1
-#         
-#         # TODO: falta procesar el ultimo spike
-#         #######################
 
         aux = np.argwhere(spikes[:,self.w_pre] == 0)       #erases indexes that were artifacts
         if len(aux) != 0:

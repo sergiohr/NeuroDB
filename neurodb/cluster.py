@@ -22,6 +22,7 @@ import multiprocessing as mp
 import neurodb.features
 from sklearn.decomposition import PCA
 from mpl_toolkits.mplot3d import Axes3D
+import time
 
 output = mp.Queue()
 
@@ -209,7 +210,7 @@ class DPClustering():
                 templates.append(x[0])
                 ids.append(x[1])
             
-            smod = np.float(2)
+            smod = np.float(1.5)
              
             features_ids = self.__insertFeaturesTemplate(templates, ids)
             
@@ -302,7 +303,6 @@ class DPClustering():
             result = output.get()
             results.append(result)
         
-        
         out=[]
         for r in results:
             for t in r:
@@ -332,9 +332,9 @@ class DPClustering():
         cluster_index = np.empty(nspikes)
         features = neurodb.features.getFeaturesFromSpikes(nodo, connection=dbconn)
         
-        
         dc = libcd.getDC(connect, features, spikes_id, nspikes, np.float(1.8), points)
         libcd.dpClustering(features, nspikes, dc, points, "gaussian", spikes_id, cluster_index, rho, delta, smod)
+        
         #plt.plot(delta[rho.argsort()])
         #plt.show()
         #show_selection(rho, delta)
@@ -363,6 +363,7 @@ class DPClustering():
             template = template/k
             out.append((template, gspikes))
         
+        dbconn.close()
         output.put(out)
         
     def __insertFeaturesTemplate(self, templates, spike_ids):
@@ -401,14 +402,14 @@ class DPClustering():
     def __saveLabelsMulti(self, spikes, labels):
         
         process = []
-        nn = int(len(spikes)/10)
+        nprocess = 14
+        nn = int(len(spikes)/nprocess)
         
-        for i in range(9):
-            #print i*nn,i*nn+nn-1
+        #self.__saveLabels(spikes[0:nn-1], labels[0:nn-1])
+        for i in range(nprocess-1):
             process.append(mp.Process(target=self.__saveLabels, args=(spikes[i*nn:i*nn+nn-1], labels[i*nn:i*nn+nn-1])))
         
-        #print 9*nn,len(spikes)-1
-        process.append(mp.Process(target=self.__saveLabels, args=(spikes[9*nn:len(spikes)-1], labels[9*nn:len(spikes)-1])))
+        process.append(mp.Process(target=self.__saveLabels, args=(spikes[(nprocess-1)*nn:len(spikes)-1], labels[(nprocess-1)*nn:len(spikes)-1])))
         
         for p in process:
             p.start()
@@ -416,8 +417,9 @@ class DPClustering():
         for p in process:
             p.join()
         
+        pass
     
-    def __saveLabels(self, spikes, labels):
+    def __saveLabels2(self, spikes, labels):
         username = 'postgres'
         password = 'postgres'
         host = '172.16.162.128'
@@ -430,16 +432,43 @@ class DPClustering():
             cursor.execute(query)
         
         dbconn.commit()
+        dbconn.close()
+        
+    def __saveLabels(self, spikes, labels):
+        username = 'postgres'
+        password = 'postgres'
+        host = '172.16.162.128'
+        dbname = 'demo'
+        dbconn = psycopg2.connect('dbname=%s user=%s password=%s host=%s'%(dbname, username, password, host))
+        cursor = dbconn.cursor()
+        
+        query = "UPDATE features SET label="
+        case = "CASE id_spike "
+        ids = ""
+        for i in range(len(spikes)):
+            case = case + "WHEN '%s' THEN %s "%(spikes[i], int(labels[i]))
+            ids = ids + "%s, "%(spikes[i])
+        case = case + "END "
+        ids = ids[:len(ids)-2]
+        
+        query = query + case
+        query = query + "WHERE id_spike in (%s)"%ids
+        
+        #print query
+        cursor.execute(query)
+        
+        dbconn.commit()
+        dbconn.close()
         
 if __name__ == '__main__':
     connect = "dbname=demo host=172.16.162.128 user=postgres password=postgres"
     id_project = 19
     #id_session = "84" #5768 spikes
-    id_session = "94" #74394 spikes
-    #id_session = "98" #2800 spikes
+    #id_session = "94" #74394 spikes
+    id_session = "98" #2800 spikes
     channel = "1"
     points = 3
-    n_nodos = 30
+    n_nodos = 20
     
     if db.NDB == None:
         db.connect()
@@ -461,7 +490,7 @@ if __name__ == '__main__':
     spikes = rc.get_spikes()
     
     np.set_printoptions(threshold=np.nan)
-    dp = DPClustering(points=points, percentage_dc=2, kernel="gaussian", threading = "multi", nnodos = n_nodos)
+    dp = DPClustering(points=points, percentage_dc=2, kernel="gaussian", threading = "serial", nnodos = n_nodos)
     labels = dp.fitSpikes(spikes)
     
     #print labels

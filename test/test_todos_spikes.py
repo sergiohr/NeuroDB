@@ -79,7 +79,7 @@ if __name__ == '__main__':
     
     connect = "dbname=demo host=172.16.162.128 user=postgres password=postgres"
     id_project = 19
-    id_session = "69"
+    id_session = "98"
     channel = "1"
     points = 6
     n_nodos = 1
@@ -96,9 +96,10 @@ if __name__ == '__main__':
     centers = np.empty(n)
     
     nodo = np.array(nodos[0], np.float64)
-    #dc = libcd.get_dc(connect, nodo, n, np.float(2), points)
+    dc = libcd.get_dc(connect, nodo, n, np.float(2), points)
+    libcd.getDC(connect, features, spikes_id, nspikes, np.float(1.8), points)
     #dc = 5.83778190613
-    dc = 4.82201528549
+    #dc = 4.82201528549
     print dc
     
     f = open('distance_to_higher_density.p','rb')
