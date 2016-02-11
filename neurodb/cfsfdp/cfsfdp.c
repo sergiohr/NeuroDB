@@ -344,14 +344,6 @@ float* featuresDistances(double* spikeFeatures, double* id_spike, int n, int poi
         }
     }
 
-    //esto es para que los id de features coincida con el orden de los ids
-    // se agrego a la query
-//    for (i = 0; i < n; i++)
-//    {
-//        sscanf(PQgetvalue(res, i, points +1),"%f",&(id));
-//        spikeFeatures[i] = (double)id;
-//    }
-
     PQclear(res);
     PQfinish(conn);
     free(query);
@@ -368,24 +360,6 @@ float getDC(char connect[], double* features,  double* id_spikes, int nspikes, f
     int i, j, k;
     int position;
 
-//    distances = featuresDistances(features, id_spikes, nspikes, points);
-//    array_distances = calloc(nspikes*(nspikes+1)/2-nspikes, sizeof(float));
-//
-//    for (i = 0, k = 0; i < nspikes; i++) {
-//          for (j = i+1 ; j < nspikes; j++, k++) {
-//                array_distances[k] = distances[i*nspikes+j];
-//          }
-//      }
-//
-//    //There are nspikes zeros, because distances from itselfs
-//    position = k*percent/100 -1 + nspikes;
-//    //position = nspikes + 2*nspikes*percent/100 -1;
-//    qsort(array_distances, k, sizeof(float), &compare);
-//
-//    dc = array_distances[position];
-//
-//    free(distances);
-//    free(array_distances);
     k = nspikes*nspikes;
     distances = featuresDistances(features, id_spikes, nspikes, points);
     array_distances = calloc(k, sizeof(float));

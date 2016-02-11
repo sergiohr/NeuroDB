@@ -58,7 +58,7 @@ def run(n_nodos = 20):
     
     t1 = time.time()
     
-    dp = neurodb.cluster.DPClustering(points=points, percentage_dc=2, kernel="gaussian", threading = "multi", nnodos = n_nodos)
+    dp = neurodb.cluster.DPClustering(points=points, percentage_dc=2, kernel="gaussian", threading = "serial", nnodos = n_nodos)
     labels = dp.fitSpikes(spikes)
     
     t2 = time.time()

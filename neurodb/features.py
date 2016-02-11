@@ -64,22 +64,31 @@ def getFeaturesFromSpikes(spikes, connection=None):
     
     p = ""
     for i in spikes:
-        p = p + " id_spike=%s or"%(i)
-    p = p[:len(p)-3]
+        p = p + "%s, "%(i)
+    p = p[:len(p)-2]
     
-    query = "SELECT id, id_spike from FEATURES WHERE" + p
+    query = "SELECT id, id_spike from FEATURES WHERE id_spike in (" + p +")"
     
     cursor.execute(query)
     
     results = cursor.fetchall()
     #results = [x[0] for x in results]
+    
+    ids = [x[1] for x in results]
+    
     out = []
-    
     for i in spikes:
-        for j in range(len(results)):
-            if i == results[j][1]:
-                out.append(results[j][0])
+        index = ids.index(i)
+        out.append(results[index][0])
     
+    ######################
+#     out = []
+#     
+#     for i in spikes:
+#         for j in range(len(results)):
+#             if i == results[j][1]:
+#                 out.append(results[j][0])
+    ######################
     return np.array(out, np.float64)
 
 
