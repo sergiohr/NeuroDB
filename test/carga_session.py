@@ -15,7 +15,7 @@ import quantities
 if __name__ == '__main__':
     #file = '/home/sergio/matlab/extra/NeuroCube/mat/sims/Spikesim.mat'
     #file = '/home/sergio/Proyectos/sandbox/datatest.mat'
-    file = '/home/sergio/iibm/wave_clus_2.0wb/Simulator/test/sp6000.mat'
+    file = '/home/sergio/iibm/wave_clus_2.0wb/Simulator/test/1p2s90000.mat'
     name = file.split('/')[-1]
     #neurodb.project.update_spike_coordenates(76, 1)
   

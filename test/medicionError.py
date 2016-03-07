@@ -127,4 +127,4 @@ def run(n_nodos = 20):
 
 for k in range(10):
     print "--- %s ---"%(k)
-    run(8)
+    run(20)

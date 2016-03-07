@@ -16,6 +16,10 @@ import scipy.io
 import matplotlib.pyplot as plt
         
 
+def show(signal):
+    plt.plot(signal)
+    plt.show()
+
 class Detector():
     '''
     classdocs

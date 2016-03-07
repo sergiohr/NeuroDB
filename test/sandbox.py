@@ -4,7 +4,7 @@ Created on Dec 20, 2015
 @author: sergio
 '''
 
-
+import scipy.io
 import numpy as np
 import ctypes
 import numpy.ctypeslib as npct
@@ -23,34 +23,26 @@ import multiprocessing as mp
 import neurodb.features
 from sklearn.decomposition import PCA
 from mpl_toolkits.mplot3d import Axes3D
+import neurodb.Spike.spike as Spike
+
+def show(signal):
+    plt.plot(signal)
+    plt.show()
 
 username = 'postgres'
 password = 'postgres'
 host = '172.16.162.128'
 dbname = 'demo'
 
-connection = psycopg2.connect('dbname=%s user=%s password=%s host=%s'%(dbname, username, password, host))
-cursor = connection.cursor()
+sr = 32258
+file = '/home/sergio/iibm/wave_clus_2.0wb/Simulator/test/1p2s90000.mat'
+name = file.split('/')[-1]
 
-query = """
-select features.id_spike, features.label from features 
-join spike on spike.id = features.id_spike 
-join segment on segment.id = spike.id_segment 
-where segment.id_block = 94
-"""
+x = scipy.io.loadmat(file)
+x = x['data'][0]
 
-cursor.execute(query)
-results = cursor.fetchall()
+ndbdetector = Spike.Detector()
+ndbdetector.set_parameters(sr=int(sr))
+spikes, index, thr = ndbdetector.get_spikes(x)
 
-spikes = np.array([x[0] for x in results])
-labels = np.array([x[1] for x in results])
-
-outfile = "spikes_id_94.bin"
-f = file(outfile,"wb")
-np.save(f, spikes)
-f.close()
-
-outfile = "labels_id_94.bin"
-f = file(outfile,"wb")
-np.save(f, labels)
-f.close()
+pass
