@@ -114,6 +114,64 @@ class Detector():
             print 'except __int_spikes'
         return spikes1
 
+
+    def __amp_detect2(self, x):
+        
+        ref = np.floor(self.min_ref_per*self.sr/1000.0)
+        x1 = scipy.io.loadmat('/home/sergio/iibm/wave_clus_2.0wb/Simulator/test/spikes90000.mat')
+        x1 = x1['data'][0]
+        # HIGH-PASS FILTER OF THE DATA
+        (b,a) = signal.ellip(2, 0.1, 40, [self.fmin_detect*2.0/self.sr,self.fmax_detect*2.0/self.sr], btype='bandpass', analog=0, output='ba')
+        xf_detect = signal.filtfilt(b, a, x)
+        (b,a) = signal.ellip(2, 0.1, 40, [self.fmin_sort*2.0/self.sr,self.fmax_sort*2.0/self.sr], btype='bandpass', analog=0, output='ba')
+        xf = signal.filtfilt(b, a, x)
+        
+        xf_detect2 = np.array(x1)
+        xf2 = np.array(x1)
+        
+        noise_std_detect = scipy.mean(np.abs(xf_detect2))/0.6745;
+        noise_std_sorted = scipy.mean(np.abs(xf2))/0.6745;
+       
+        thr = self.stdmin * noise_std_detect        #thr for detection is based on detected settings.
+        thrmax = self.stdmax * noise_std_sorted     #thrmax for artifact removal is based on sorted settings.
+        
+        # LOCATE SPIKE TIMES
+        # Detect POSITIVE PEAKS
+        nspk = 0;
+        xaux = np.argwhere(xf_detect2[self.w_pre+1:len(xf_detect2)-self.w_post-1-1] > thr) + self.w_pre + 1
+        xaux = np.resize(xaux,len(xaux)) #position of the peaks
+        xaux0 = 0; # last processed peak
+        index = []
+        for i in range(len(xaux)):
+            if xaux[i] >= (xaux0 + ref): # para evitar solapamiento
+            # after find a peak it begin search after ref over the last xaux
+                iaux = xf[xaux[i]:xaux[i]+np.floor(ref/2.0)].argmax(0)    # introduces alignment
+                nspk = nspk + 1
+                index.append(iaux + xaux[i])
+                xaux0 = index[nspk-1];
+                    
+        # SPIKE STORING (with or without interpolation)
+        ls = self.w_pre + self.w_post
+        spikes = np.zeros([nspk,ls+4])
+        xf = np.concatenate((xf,np.zeros(self.w_post)),axis=0)
+        
+        for i in range(nspk):                          # Eliminates artifacts
+            if np.max( np.abs( xf[index[i]-self.w_pre:index[i]+self.w_post] )) < thrmax :
+                spikes[i,:] = xf[index[i]-self.w_pre-1:index[i]+self.w_post+3]
+
+        aux = np.argwhere(spikes[:,self.w_pre] == 0)       #erases indexes that were artifacts
+        if len(aux) != 0:
+            aux = aux.reshape((1,len(aux)))[0]
+            spikes = np.delete(spikes, aux, axis = 0)
+            index = np.delete(index,aux)
+ 
+        if self.interpolation == 'y':
+            # Does interpolation
+            spikes = self.__int_spikes(spikes)
+
+        return spikes, thr, index
+
+
     def __amp_detect(self, x):
         
         ref = np.floor(self.min_ref_per*self.sr/1000.0)
@@ -168,7 +226,7 @@ class Detector():
         return spikes, thr, index
         
     def get_spikes(self, analogSignal):
-        spikes, thr, index = self.__amp_detect(analogSignal)
+        spikes, thr, index = self.__amp_detect2(analogSignal)
         
         return spikes, index, thr
 

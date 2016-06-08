@@ -41,7 +41,7 @@ def run(n_nodos = 20):
     cursor = connection.cursor()
     
     id_project = 19
-    id_session = "94" #74394 spikes
+    id_session = "117" #74394 spikes
     #id_session = "98" #2800 spikes
     channel = "1"
     points = 3
@@ -75,54 +75,73 @@ def run(n_nodos = 20):
     cursor.execute(query)
     results = cursor.fetchall()
      
-    spikesB = [x[0] for x in results]
-    labelsB = [x[1] for x in results]
+    spikesB = np.array([x[0] for x in results])
+    labelsB = np.array([x[1] for x in results])
     
-    f = file("spikes_id_94.bin","rb")
-    spikesA = np.load(f)
-    f.close()
+    query = """
+    select features.id_spike, features.labelPrueba from features 
+    join spike on spike.id = features.id_spike 
+    join segment on segment.id = spike.id_segment 
+    where segment.id_block = %s"""%(id_session)
     
-    f = file("labels_id_94.bin","rb")
-    labelsA = np.load(f)
-    f.close()
+    cursor.execute(query)
+    results = cursor.fetchall()
+     
+    spikesA = np.array([x[0] for x in results])
+    labelsA = np.array([x[1] for x in results])
     
+    query = """select distinct features.label from features 
+                join spike on spike.id = features.id_spike 
+                join segment on segment.id = spike.id_segment 
+                where segment.id_block=117"""
+    cursor.execute(query)
+    results = cursor.fetchall()
+    clusters = np.array([x[0] for x in results])
     
-    #t1 = time.time()
-    ux = [0, 0, 0]
-    for i in range(len(labelsA)):
-        index = np.argwhere(spikesB==spikesA[i])
-        if (labelsA[i] == 1) and (ux[0] == 0):
-            if labelsB[index[0][0]] != 0:
-                ux[0] = labelsB[index[0][0]]
-        if (labelsA[i] == 2) and (ux[1] == 0):
-            if labelsB[index[0][0]] != 0:
-                ux[1] = labelsB[index[0][0]]
-        if (labelsA[i] == 3) and (ux[2] == 0):
-            if labelsB[index[0][0]] != 0:
-                ux[2] = labelsB[index[0][0]]
-        if (ux[0] != 0) and (ux[1] != 0) and (ux[2] != 0):
-            break
+    print "Clusters: ", clusters
     
+    lb1 = 0
+    lb2 = 0
+    lb3 = 0
     
-    error = 0
-    for i in range(len(labelsA)):
-        index = np.argwhere(spikesB==spikesA[i])
-        if labelsA[i] == 1:
-            if labelsB[index[0][0]] != ux[0]:
-                error = error + 1
-            continue
-        if labelsA[i] == 2:
-            if labelsB[index[0][0]] != ux[1]:
-                error = error + 1
-            continue
-        if labelsA[i] == 3:
-            if labelsB[index[0][0]] != ux[2]:
-                error = error + 1
-            continue
-    #t2 = time.time()
+    for i in clusters:
+        query = """select count(features.label) from features 
+        join spike on spike.id = features.id_spike 
+        join segment on segment.id = spike.id_segment 
+        where segment.id_block=%s and labelprueba=1 and label=%s;"""%(id_session, i)
+        cursor.execute(query)
+        results = cursor.fetchall()
+        if lb1 < results[0][0]:
+            lb1 = results[0][0]
+            index1 = i
+        
+        query = """select count(features.label) from features 
+        join spike on spike.id = features.id_spike 
+        join segment on segment.id = spike.id_segment 
+        where segment.id_block=%s and labelprueba=2 and label=%s;"""%(id_session, i)
+        cursor.execute(query)
+        results = cursor.fetchall()
+        if lb2 < results[0][0]:
+            lb2 = results[0][0]
+            index2 = i
+            
+        query = """select count(features.label) from features 
+        join spike on spike.id = features.id_spike 
+        join segment on segment.id = spike.id_segment 
+        where segment.id_block=%s and labelprueba=3 and label=%s;"""%(id_session, i)
+        cursor.execute(query)
+        results = cursor.fetchall()
+        if lb3 < results[0][0]:
+            lb3 = results[0][0]
+            index3 = i
+    
+    error = 90000-lb1-lb2-lb3
     
     #print (t2-t1)/60            
-    print error
+    print "error:",error
+    print "lb1:",lb1
+    print "lb2:",lb2
+    print "lb3:",lb3
     connection.close()
 
 for k in range(10):

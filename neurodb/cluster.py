@@ -407,9 +407,9 @@ class DPClustering():
         
         #self.__saveLabels(spikes[0:nn-1], labels[0:nn-1])
         for i in range(nprocess-1):
-            process.append(mp.Process(target=self.__saveLabels, args=(spikes[i*nn:i*nn+nn-1], labels[i*nn:i*nn+nn-1])))
+            process.append(mp.Process(target=self.__saveLabels, args=(spikes[i*nn:i*nn+nn], labels[i*nn:i*nn+nn])))
         
-        process.append(mp.Process(target=self.__saveLabels, args=(spikes[(nprocess-1)*nn:len(spikes)-1], labels[(nprocess-1)*nn:len(spikes)-1])))
+        process.append(mp.Process(target=self.__saveLabels, args=(spikes[(nprocess-1)*nn:len(spikes)], labels[(nprocess-1)*nn:len(spikes)])))
         
         for p in process:
             p.start()

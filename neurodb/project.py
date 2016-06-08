@@ -212,7 +212,8 @@ class Project(object):
         
         if mode == 'Matlab':
             x = scipy.io.loadmat(session_path)
-            x = x['data'][0]
+            print 'cambiar project linea 215'
+            x = x['data1'][0]
             nchannels = 1
             
             name = session_path.split('/')[-1]
@@ -406,21 +407,21 @@ def save_channel_spikes_multi(id_block, channel):
         
         process = []
         n = len(spikes)
-        print "spikes:",n
+        
         
         nn = int(n/10)
         
         for i in range(9):
-            process.append(mp.Process(target=__saveSpikes, args=(spikes[i*nn:i*nn+nn-1], index[i*nn:i*nn+nn-1], channel, id_block, segment, ansig.sampling_rate)))
+            process.append(mp.Process(target=__saveSpikes, args=(spikes[i*nn:i*nn+nn], index[i*nn:i*nn+nn], channel, id_block, segment, ansig.sampling_rate)))
         
-        process.append(mp.Process(target=__saveSpikes, args=(spikes[9*nn:len(spikes)-1], index[9*nn:len(spikes)-1], channel, id_block, segment, ansig.sampling_rate)))
-        
+        process.append(mp.Process(target=__saveSpikes, args=(spikes[9*nn:len(spikes)], index[9*nn:len(spikes)], channel, id_block, segment, ansig.sampling_rate)))
         
         for p in process:
             p.start()
      
         for p in process:
-            p.join(7200)
+            p.join()
+        
 
 
 def __saveSpikes(spikes, index, channel, id_block, segment, sr):
@@ -430,7 +431,7 @@ def __saveSpikes(spikes, index, channel, id_block, segment, sr):
     dbname = 'demo'
     url = 'postgresql://%s:%s@%s/%s'%(username, password, host, dbname)
     dbconn = psycopg2.connect('dbname=%s user=%s password=%s host=%s'%(dbname, username, password, host))    
-    
+    print len(spikes)
     for i in range(len(spikes)):
         t_spike = index[i]/float(sr)
         
@@ -441,7 +442,8 @@ def __saveSpikes(spikes, index, channel, id_block, segment, sr):
                                    index = index[i],
                                    sampling_rate = segment.sampling_rate)
         id_spike = spike.save(dbconn)
-    
+        
+    dbconn.close()
     #TODO: returns of the function neurodb.save_channel_spikes
 
 def get_clusters(id_block, channel, method, save=None):

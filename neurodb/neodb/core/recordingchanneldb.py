@@ -6,6 +6,7 @@ Created on Sep 8, 2014
 import neo.core
 import psycopg2
 from .. import dbutils
+import spikedb
 #import dbutils
 
 class RecordingChannelDB(neo.core.RecordingChannel):
@@ -104,6 +105,12 @@ class RecordingChannelDB(neo.core.RecordingChannel):
                 idesr.append(i[0])
         
         return idesr
+    
+    def get_spike(self, id):
+        sp = spikedb.get_from_db(self.connection, channel=self.id, id=id)
+        if sp != []:
+            return sp[0]
+        return []
     
     def remove_spikes(self, connection = None):
         if connection == None:

@@ -14,9 +14,7 @@ import matplotlib.pyplot as plt
 import db
 import scipy.signal as signal
 
-
-
-def updateChannelFeatures(id_block, channel):
+def updateChannelFeatures2(id_block, channel):
     #TODO: Create p1, p2 y p3 columns
     if db.NDB == None:
         db.connect()
@@ -26,9 +24,8 @@ def updateChannelFeatures(id_block, channel):
     
     for spike in spikes:
         #mspikes.append(spike.waveform)
-        #max = spike.waveform.max()
-        #spike.waveform = spike.waveform/max
-        #spike.waveform = np.convolve(spike.waveform, np.ones((10,))/10, mode='same')
+        max = spike.waveform.max()
+        spike.waveform = spike.waveform/max
         mspikes.append((spike.waveform - np.mean(spike.waveform, 0)) / np.std(spike.waveform, 0))
     mspikes = np.array(mspikes)
     
@@ -48,6 +45,42 @@ def updateChannelFeatures(id_block, channel):
         neodb.core.spikedb.update(db.NDB, id = id, p1 = p[0], p2 = p[1], p3 = p[2], p4 = p[3], p5 = p[4], p6 = p[5], p7 = p[6], p8 = p[7], p9 = p[8], p10 = p[9])
         query = """SELECT UPSERT_FEATURES('%s', '%s','%s', '%s','%s', 
                           '%s','%s', '%s','%s', '%s', '%s')"""%(id, p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9])
+        cursor.execute(query)
+        db.NDB.commit()
+        
+        i = i+1
+
+def updateChannelFeatures(id_block, channel):
+    #TODO: Create p1, p2 y p3 columns
+    if db.NDB == None:
+        db.connect()
+        
+    spikes = neodb.core.spikedb.get_from_db(db.NDB, id_block, channel)
+    mspikes = []
+    
+    for spike in spikes:
+        #mspikes.append(spike.waveform)
+        max = spike.waveform.max()
+        spike.waveform = spike.waveform/max
+        mspikes.append((spike.waveform - np.mean(spike.waveform, 0)) / np.std(spike.waveform, 0))
+    mspikes = np.array(mspikes)
+    
+    if mspikes == []:
+        raise StandardError("Session %s, channel %s have not got spikes.")
+    
+    pca = PCA(n_components=3)
+    transf = pca.fit_transform(mspikes)
+    
+    spikes_id = neodb.core.spikedb.get_ids_from_db(db.NDB, id_block, channel)
+    
+    #TODO: independizar esta parte de querys a la base
+    cursor = db.NDB.cursor()
+    i = 0
+    for p in transf:
+        id = spikes_id[i]
+        neodb.core.spikedb.update(db.NDB, id = id, p1 = p[0], p2 = p[1], p3 = p[2])
+        query = """SELECT UPSERT_FEATURES('%s', '%s','%s', '%s','%s', 
+                          '%s','%s', '%s','%s', '%s', '%s')"""%(id, p[0], p[1], p[2], 0, 0, 0, 0, 0, 0, 0)
         cursor.execute(query)
         db.NDB.commit()
         

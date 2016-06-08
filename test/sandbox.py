@@ -33,16 +33,37 @@ username = 'postgres'
 password = 'postgres'
 host = '172.16.162.128'
 dbname = 'demo'
+channel = 1
+id_block = 117
 
-sr = 32258
-file = '/home/sergio/iibm/wave_clus_2.0wb/Simulator/test/1p2s90000.mat'
-name = file.split('/')[-1]
+dbconn = psycopg2.connect('dbname=%s user=%s password=%s host=%s'%(dbname, username, password, host))
 
-x = scipy.io.loadmat(file)
-x = x['data'][0]
+neurodb.project.ls()
 
-ndbdetector = Spike.Detector()
-ndbdetector.set_parameters(sr=int(sr))
-spikes, index, thr = ndbdetector.get_spikes(x)
+p = neurodb.project.get_from_db(19)
+
+b = p.get_session(118)
+c = b.get_channel(279)
+s = c.ls_spikes()
+
+sp = c.get_spike(s[0])
+signal = sp.waveform
+plt.plot(signal)
+
+sp = c.get_spike(s[30000])
+signal = sp.waveform
+plt.plot(signal)
+
+sp = c.get_spike(s[30000-1])
+signal = sp.waveform
+plt.plot(signal)
+
+plt.show()
+
+pass
+
+# spikes = neurodb.neodb.core.spikedb.get_from_db(dbconn, id_block = id_block, channel = channel, id = int()
+# signal = spikes[0].waveform
+# show(signal)
 
 pass
